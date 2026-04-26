@@ -14,6 +14,7 @@ import {
   Clock,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useSession, signIn } from "next-auth/react";
 
 interface Repo {
   name: string;
@@ -37,6 +38,7 @@ interface RecentTask {
 }
 
 export default function Home() {
+  const { data: session } = useSession();
   const [selectedRepo, setSelectedRepo] = useState(repos[0]);
   const [selectedBranch, setSelectedBranch] = useState("main");
   const [showRepoDropdown, setShowRepoDropdown] = useState(false);
@@ -153,6 +155,16 @@ export default function Home() {
                 <div className="flex items-center justify-end px-4 pb-3">
                   <button
                     disabled={!input.trim()}
+                    onClick={() => {
+                      if (!session) {
+                        const isMock = process.env.NEXT_PUBLIC_MOCK_LOGIN === "true"
+                        isMock
+                          ? signIn("mock", { username: "dev-user", callbackUrl: "/" })
+                          : signIn("github")
+                        return
+                      }
+                      // TODO: create task API call
+                    }}
                     className="flex items-center gap-2 px-5 py-2 bg-muted text-muted-foreground rounded-lg hover:bg-primary hover:text-primary-foreground disabled:opacity-40 disabled:cursor-not-allowed transition-all text-sm font-medium"
                   >
                     <span>编码</span>

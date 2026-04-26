@@ -13,8 +13,11 @@ import {
   CheckCircle2,
   Circle,
   X,
+  User,
+  LogOut,
 } from "lucide-react";
 import Link from "next/link";
+import { useSession, signIn, signOut } from "next-auth/react";
 
 interface Task {
   id: string;
@@ -169,13 +172,62 @@ export function Sidebar() {
           <Settings className="w-4 h-4" />
           {isExpanded && <span className="text-sm">设置</span>}
         </Link>
-        <div className="flex items-center gap-3 px-3 py-2">
-          <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center text-xs text-primary-foreground font-medium">
-            S
-          </div>
-          {isExpanded && <span className="text-sm font-medium">sinksmell</span>}
-        </div>
+        <UserSection isExpanded={isExpanded} />
       </div>
     </aside>
+  );
+}
+
+const isMockLogin = process.env.NEXT_PUBLIC_MOCK_LOGIN === "true";
+
+function UserSection({ isExpanded }: { isExpanded: boolean }) {
+  const { data: session } = useSession();
+
+  if (session?.user) {
+    return (
+      <button
+        onClick={() => signOut()}
+        className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-accent transition-colors w-full text-left"
+        title="点击退出登录"
+      >
+        {session.user.image ? (
+          <img
+            src={session.user.image}
+            alt={session.user.name || ""}
+            className="w-6 h-6 rounded-full"
+          />
+        ) : (
+          <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center text-xs text-primary-foreground font-medium">
+            {(session.user.name?.[0] || "U").toUpperCase()}
+          </div>
+        )}
+        {isExpanded && (
+          <div className="flex items-center gap-2 flex-1 min-w-0">
+            <span className="text-sm font-medium truncate">
+              {session.user.name || session.user.email || "User"}
+            </span>
+            <LogOut className="w-3 h-3 text-muted-foreground ml-auto flex-shrink-0" />
+          </div>
+        )}
+      </button>
+    );
+  }
+
+  return (
+    <button
+      onClick={() =>
+        isMockLogin
+          ? signIn("mock", { username: "dev-user", callbackUrl: "/" })
+          : signIn("github")
+      }
+      className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-accent transition-colors w-full text-left text-muted-foreground hover:text-foreground"
+    >
+      <User className="w-4 h-4" />
+      {isExpanded && (
+        <span className="text-sm">
+          {isMockLogin ? "本地测试登录" : "GitHub 登录"}
+        </span>
+      )}
+    </button>
   );
 }
