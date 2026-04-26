@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/auth"
 import { createClient } from "@/lib/supabase/server"
 
-// POST /api/user/api-key - Save user's Claude API Key
+// POST /api/user/api-key - Save user's Anthropic config
 export async function POST(req: NextRequest) {
   const session = await auth()
   if (!session?.user?.githubId) {
@@ -10,7 +10,7 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json()
-  const { apiKey } = body
+  const { apiKey, baseUrl } = body
 
   if (!apiKey || typeof apiKey !== "string") {
     return NextResponse.json({ error: "API Key is required" }, { status: 400 })
@@ -28,10 +28,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "User not found" }, { status: 404 })
   }
 
-  // For MVP: store API key as-is. In production, encrypt with AES-256-GCM.
   const { error } = await supabase
     .from("users")
-    .update({ api_key_encrypted: apiKey })
+    .update({
+      anthropic_api_key: apiKey,
+      anthropic_base_url: baseUrl || null,
+    })
     .eq("id", user.id)
 
   if (error) {
@@ -53,7 +55,7 @@ export async function GET() {
 
   const { data: user } = await supabase
     .from("users")
-    .select("api_key_encrypted")
+    .select("anthropic_api_key, anthropic_base_url")
     .eq("github_id", session.user.githubId)
     .single()
 
@@ -62,7 +64,8 @@ export async function GET() {
   }
 
   return NextResponse.json({
-    hasKey: !!user.api_key_encrypted,
+    hasKey: !!user.anthropic_api_key,
+    hasBaseUrl: !!user.anthropic_base_url,
     // Never return the actual key
   })
 }

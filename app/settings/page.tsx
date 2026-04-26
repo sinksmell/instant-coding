@@ -339,6 +339,7 @@ export default function SettingsPage() {
 
 function ApiKeySettings() {
   const [apiKey, setApiKey] = useState("");
+  const [baseUrl, setBaseUrl] = useState("");
   const [showKey, setShowKey] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -350,7 +351,10 @@ function ApiKeySettings() {
       const res = await fetch("/api/user/api-key", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ apiKey: apiKey.trim() }),
+        body: JSON.stringify({
+          apiKey: apiKey.trim(),
+          baseUrl: baseUrl.trim() || undefined,
+        }),
       });
       if (res.ok) {
         setSaved(true);
@@ -376,16 +380,16 @@ function ApiKeySettings() {
             </svg>
           </div>
           <div className="flex-1">
-            <p className="font-medium">Claude API Key</p>
+            <p className="font-medium">Claude API 配置</p>
             <p className="text-sm text-muted-foreground mt-1">
-              你的 API Key 仅存储在你的账户中，我们不会访问或使用它。
-              所有 AI 调用都将使用你自己的 Key。
+              你的配置仅存储在你的账户中，平台不会访问或使用。
+              所有 AI 调用都将使用你自己的 Key 和代理地址。
             </p>
           </div>
         </div>
 
         <div className="space-y-3">
-          <label className="text-sm font-medium">API Key</label>
+          <label className="text-sm font-medium">ANTHROPIC_API_KEY</label>
           <div className="relative">
             <input
               type={showKey ? "text" : "password"}
@@ -406,6 +410,20 @@ function ApiKeySettings() {
           </p>
         </div>
 
+        <div className="space-y-3">
+          <label className="text-sm font-medium">ANTHROPIC_BASE_URL（可选）</label>
+          <input
+            type="text"
+            value={baseUrl}
+            onChange={(e) => setBaseUrl(e.target.value)}
+            placeholder="https://api.anthropic.com 或你的代理地址"
+            className="w-full px-4 py-2.5 rounded-lg border border-border bg-background text-sm outline-none focus:ring-2 focus:ring-ring"
+          />
+          <p className="text-xs text-muted-foreground">
+            如果使用第三方代理或兼容接口，请填写对应的 Base URL
+          </p>
+        </div>
+
         <div className="flex items-center gap-3 pt-2">
           <button
             onClick={handleSave}
@@ -415,7 +433,7 @@ function ApiKeySettings() {
             <Save className="w-4 h-4" />
             {saving ? "保存中..." : saved ? "已保存" : "保存"}
           </button>
-          {saved && <span className="text-sm text-green-500">API Key 已保存</span>}
+          {saved && <span className="text-sm text-green-500">配置已保存</span>}
         </div>
       </div>
     </div>

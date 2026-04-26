@@ -10,7 +10,8 @@ CREATE TABLE users (
   email TEXT,
   name TEXT,
   avatar_url TEXT,
-  api_key_encrypted TEXT,
+  anthropic_api_key TEXT,
+  anthropic_base_url TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
