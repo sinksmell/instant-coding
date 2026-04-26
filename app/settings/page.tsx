@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Sidebar } from "@/components/sidebar";
 import { cn } from "@/lib/utils";
 import {
@@ -343,21 +343,36 @@ function ApiKeySettings() {
   const [showKey, setShowKey] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [hasSavedKey, setHasSavedKey] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch("/api/user/api-key")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.hasKey) setHasSavedKey(true);
+        if (data.baseUrl) setBaseUrl(data.baseUrl);
+      })
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, []);
 
   const handleSave = async () => {
-    if (!apiKey.trim()) return;
+    if (!apiKey.trim() && !baseUrl.trim() && !hasSavedKey) return;
     setSaving(true);
     try {
       const res = await fetch("/api/user/api-key", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          apiKey: apiKey.trim(),
+          apiKey: apiKey.trim() || undefined,
           baseUrl: baseUrl.trim() || undefined,
         }),
       });
       if (res.ok) {
         setSaved(true);
+        setHasSavedKey(true);
+        setApiKey("");
         setTimeout(() => setSaved(false), 3000);
       } else {
         alert("保存失败，请重试");
@@ -395,7 +410,7 @@ function ApiKeySettings() {
               type={showKey ? "text" : "password"}
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
-              placeholder="sk-ant-api03-..."
+              placeholder={hasSavedKey ? "已设置（输入新值覆盖）" : "sk-ant-api03-..."}
               className="w-full px-4 py-2.5 pr-10 rounded-lg border border-border bg-background text-sm outline-none focus:ring-2 focus:ring-ring"
             />
             <button
@@ -427,7 +442,7 @@ function ApiKeySettings() {
         <div className="flex items-center gap-3 pt-2">
           <button
             onClick={handleSave}
-            disabled={!apiKey.trim() || saving}
+            disabled={saving || (!apiKey.trim() && !baseUrl.trim() && !hasSavedKey)}
             className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors text-sm font-medium"
           >
             <Save className="w-4 h-4" />

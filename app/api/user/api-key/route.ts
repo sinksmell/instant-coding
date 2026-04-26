@@ -69,7 +69,7 @@ export async function GET() {
 
   return NextResponse.json({
     hasKey: !!user.anthropic_api_key_encrypted,
-    hasBaseUrl: !!user.anthropic_base_url,
+    baseUrl: user.anthropic_base_url || "",
     // Never return the actual key
   })
 }
