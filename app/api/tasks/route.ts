@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/auth"
 import { createClient } from "@/lib/supabase/server"
+import { executeTask } from "@/lib/agent/executor"
 
 // POST /api/tasks - Create a new task
 export async function POST(req: NextRequest) {
@@ -47,6 +48,24 @@ export async function POST(req: NextRequest) {
   if (taskError) {
     console.error("Failed to create task:", taskError)
     return NextResponse.json({ error: "Failed to create task" }, { status: 500 })
+  }
+
+  // Trigger agent execution asynchronously (do not await)
+  if (session.accessToken) {
+    Promise.resolve().then(() =>
+      executeTask({
+        taskId: task.id,
+        userId: user.id,
+        githubId: session.user.githubId!,
+        accessToken: session.accessToken!,
+        repoOwner: repo_owner || "",
+        repoName: repo_name || "",
+        branch: branch || "main",
+        description,
+      }).catch((err) => {
+        console.error("Agent execution failed:", err)
+      })
+    )
   }
 
   return NextResponse.json({ task }, { status: 201 })
