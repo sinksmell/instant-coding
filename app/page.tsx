@@ -47,7 +47,6 @@ export default function Home() {
   const [showBranchDropdown, setShowBranchDropdown] = useState(false);
   const [input, setInput] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [quotaError, setQuotaError] = useState(false);
 
   const handleSubmit = async () => {
     if (!input.trim()) return;
@@ -61,7 +60,6 @@ export default function Home() {
     }
 
     setSubmitting(true);
-    setQuotaError(false);
 
     try {
       const res = await fetch("/api/tasks", {
@@ -77,11 +75,6 @@ export default function Home() {
       });
 
       const data = await res.json();
-
-      if (res.status === 403) {
-        setQuotaError(true);
-        return;
-      }
 
       if (!res.ok) {
         throw new Error(data.error || "Failed to create task");
@@ -204,9 +197,6 @@ export default function Home() {
                   rows={4}
                 />
                 <div className="flex items-center justify-end px-4 pb-3">
-                  {quotaError && (
-                    <p className="text-xs text-red-500 mr-3">免费版每月限 50 次，请升级 Pro</p>
-                  )}
                   <button
                     disabled={!input.trim() || submitting}
                     onClick={handleSubmit}

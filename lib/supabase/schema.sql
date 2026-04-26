@@ -11,8 +11,6 @@ CREATE TABLE users (
   name TEXT,
   avatar_url TEXT,
   api_key_encrypted TEXT,
-  plan TEXT DEFAULT 'free',
-  task_count_month INT DEFAULT 0,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 

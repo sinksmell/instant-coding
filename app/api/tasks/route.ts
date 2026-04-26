@@ -21,20 +21,12 @@ export async function POST(req: NextRequest) {
   // Find user by github_id
   const { data: user, error: userError } = await supabase
     .from("users")
-    .select("id, task_count_month, plan")
+    .select("id")
     .eq("github_id", session.user.githubId)
     .single()
 
   if (userError || !user) {
     return NextResponse.json({ error: "User not found" }, { status: 404 })
-  }
-
-  // Free tier check: 50 tasks/month
-  if (user.plan === "free" && user.task_count_month >= 50) {
-    return NextResponse.json(
-      { error: "Free tier limit reached. Upgrade to Pro for unlimited tasks." },
-      { status: 403 }
-    )
   }
 
   // Create task
@@ -56,12 +48,6 @@ export async function POST(req: NextRequest) {
     console.error("Failed to create task:", taskError)
     return NextResponse.json({ error: "Failed to create task" }, { status: 500 })
   }
-
-  // Increment task count
-  await supabase
-    .from("users")
-    .update({ task_count_month: user.task_count_month + 1 })
-    .eq("id", user.id)
 
   return NextResponse.json({ task }, { status: 201 })
 }
