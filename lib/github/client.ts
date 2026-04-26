@@ -4,6 +4,29 @@ export function createGitHubClient(accessToken: string) {
   return new Octokit({ auth: accessToken });
 }
 
+export async function listUserRepos(octokit: Octokit) {
+  const { data } = await octokit.rest.repos.listForAuthenticatedUser({
+    sort: "updated",
+    per_page: 100,
+  });
+  return data.map((repo) => ({
+    name: repo.name,
+    owner: repo.owner.login,
+    full_name: repo.full_name,
+    description: repo.description,
+    private: repo.private,
+  }));
+}
+
+export async function listBranches(octokit: Octokit, owner: string, repo: string) {
+  const { data } = await octokit.rest.repos.listBranches({
+    owner,
+    repo,
+    per_page: 100,
+  });
+  return data.map((b) => b.name);
+}
+
 export async function getRepo(
   octokit: Octokit,
   owner: string,
