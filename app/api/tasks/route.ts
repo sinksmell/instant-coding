@@ -11,7 +11,7 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json()
-  const { title, description, repo_owner, repo_name, branch = "main" } = body
+  const { title, description, repo_owner, repo_name, branch = "main", codespace_id } = body
 
   if (!description) {
     return NextResponse.json({ error: "Description is required" }, { status: 400 })
@@ -40,6 +40,7 @@ export async function POST(req: NextRequest) {
       repo_owner,
       repo_name,
       branch,
+      codespace_id: codespace_id || null,
       status: "pending",
     })
     .select()

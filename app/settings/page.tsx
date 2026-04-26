@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useSession } from "next-auth/react";
 import { Sidebar } from "@/components/sidebar";
 import { cn } from "@/lib/utils";
 import {
@@ -13,8 +14,15 @@ import {
   UserCircle,
   Info,
   Plus,
-  MoreHorizontal,
-  CheckCircle2,
+  Loader2,
+  Play,
+  Square,
+  Trash2,
+  ExternalLink,
+  Server,
+  X,
+  ChevronDown,
+  GitBranch,
   Key,
   Eye,
   EyeOff,
@@ -24,27 +32,24 @@ import Link from "next/link";
 
 type SettingTab = "general" | "environment" | "connector" | "apikey" | "chat" | "interface" | "account" | "about";
 
-interface EnvConfig {
-  id: string;
+interface Repo {
   name: string;
-  repo: string;
-  tasks: number;
-  createdAt: string;
-  user: string;
-  status: "active" | "inactive";
+  owner: string;
+  full_name: string;
+  description: string | null;
+  private: boolean;
 }
 
-const envs: EnvConfig[] = [
-  {
-    id: "1",
-    name: "files-cmp",
-    repo: "files-cmp",
-    tasks: 5,
-    createdAt: "2026/4/11 14:50:09",
-    user: "sinksmell",
-    status: "active",
-  },
-];
+interface Codespace {
+  id: string;
+  repo_owner: string;
+  repo_name: string;
+  branch: string;
+  codespace_name: string;
+  status: string;
+  web_url: string;
+  created_at: string;
+}
 
 const sidebarItems: { id: SettingTab; label: string; icon: React.ReactNode; group: "coder" | "studio" }[] = [
   { id: "general", label: "通用", icon: <Settings2 className="w-4 h-4" />, group: "coder" },
@@ -123,60 +128,7 @@ export default function SettingsPage() {
 
           {/* Settings Content */}
           <main className="flex-1 overflow-y-auto p-8">
-            {activeTab === "environment" && (
-              <div className="max-w-4xl">
-                <div className="flex items-center justify-between mb-6">
-                  <h2 className="text-xl font-semibold">环境</h2>
-                  <button className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors text-sm font-medium">
-                    <Plus className="w-4 h-4" />
-                    添加环境
-                  </button>
-                </div>
-
-                <div className="bg-card border border-border rounded-xl overflow-hidden">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="border-b border-border text-left text-sm text-muted-foreground">
-                        <th className="px-6 py-3 font-medium">环境</th>
-                        <th className="px-6 py-3 font-medium">仓库</th>
-                        <th className="px-6 py-3 font-medium">任务</th>
-                        <th className="px-6 py-3 font-medium">创建时间</th>
-                        <th className="px-6 py-3 font-medium">用户账户</th>
-                        <th className="px-6 py-3 font-medium"></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {envs.map((env) => (
-                        <tr
-                          key={env.id}
-                          className="border-b border-border last:border-0 hover:bg-accent/30 transition-colors"
-                        >
-                          <td className="px-6 py-4">
-                            <div className="flex items-center gap-2">
-                              {env.status === "active" && (
-                                <CheckCircle2 className="w-4 h-4 text-green-500" />
-                              )}
-                              <span className="font-medium">{env.name}</span>
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 text-sm">{env.repo}</td>
-                          <td className="px-6 py-4 text-sm">{env.tasks}</td>
-                          <td className="px-6 py-4 text-sm text-muted-foreground">
-                            {env.createdAt}
-                          </td>
-                          <td className="px-6 py-4 text-sm">{env.user}</td>
-                          <td className="px-6 py-4">
-                            <button className="p-1 rounded hover:bg-accent transition-colors">
-                              <MoreHorizontal className="w-4 h-4 text-muted-foreground" />
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
+            {activeTab === "environment" && <EnvironmentTab />}
 
             {activeTab === "general" && (
               <div className="max-w-2xl">
@@ -249,9 +201,7 @@ export default function SettingsPage() {
               </div>
             )}
 
-            {activeTab === "apikey" && (
-              <ApiKeySettings />
-            )}
+            {activeTab === "apikey" && <ApiKeySettings />}
 
             {activeTab === "interface" && (
               <div className="max-w-2xl">
@@ -333,6 +283,379 @@ export default function SettingsPage() {
           </main>
         </div>
       </div>
+    </div>
+  );
+}
+
+function EnvironmentTab() {
+  const { data: session } = useSession();
+  const [codespaces, setCodespaces] = useState<Codespace[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [actionId, setActionId] = useState<string | null>(null);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+
+  // Creation modal state
+  const [repos, setRepos] = useState<Repo[]>([]);
+  const [repoLoading, setRepoLoading] = useState(false);
+  const [branches, setBranches] = useState<string[]>([]);
+  const [branchLoading, setBranchLoading] = useState(false);
+  const [selectedRepo, setSelectedRepo] = useState<Repo | null>(null);
+  const [selectedBranch, setSelectedBranch] = useState("main");
+  const [creating, setCreating] = useState(false);
+  const [showRepoDropdown, setShowRepoDropdown] = useState(false);
+  const [showBranchDropdown, setShowBranchDropdown] = useState(false);
+
+  useEffect(() => {
+    loadCodespaces();
+  }, []);
+
+  // Load repos when create modal opens
+  useEffect(() => {
+    if (!showCreateModal || !session?.user?.githubId) return;
+    setRepoLoading(true);
+    fetch("/api/github/repos")
+      .then(async (res) => {
+        if (!res.ok) throw new Error("Failed");
+        return res.json();
+      })
+      .then((d) => {
+        const loaded = d.repos || [];
+        setRepos(loaded);
+        if (loaded.length > 0) setSelectedRepo(loaded[0]);
+      })
+      .catch(console.error)
+      .finally(() => setRepoLoading(false));
+  }, [showCreateModal, session?.user?.githubId]);
+
+  // Load branches when repo changes
+  useEffect(() => {
+    if (!selectedRepo) {
+      setBranches([]);
+      setSelectedBranch("main");
+      return;
+    }
+    setBranchLoading(true);
+    fetch(`/api/github/repos/${selectedRepo.owner}/${selectedRepo.name}/branches`)
+      .then(async (res) => {
+        if (!res.ok) throw new Error("Failed");
+        return res.json();
+      })
+      .then((d) => {
+        const loaded = d.branches || [];
+        setBranches(loaded);
+        setSelectedBranch(loaded[0] || "main");
+      })
+      .catch(console.error)
+      .finally(() => setBranchLoading(false));
+  }, [selectedRepo?.owner, selectedRepo?.name]);
+
+  async function loadCodespaces() {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/codespaces");
+      if (!res.ok) throw new Error("Failed");
+      const data = await res.json();
+      setCodespaces(data.codespaces || []);
+    } catch (err) {
+      console.error("Load codespaces failed:", err);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function createCodespace() {
+    if (!selectedRepo) return;
+    setCreating(true);
+    try {
+      const res = await fetch("/api/codespaces", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          repo_owner: selectedRepo.owner,
+          repo_name: selectedRepo.name,
+          branch: selectedBranch,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed");
+      }
+      setShowCreateModal(false);
+      setSelectedRepo(null);
+      setSelectedBranch("main");
+      await loadCodespaces();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "创建失败");
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  async function startCs(id: string) {
+    setActionId(id);
+    try {
+      const res = await fetch(`/api/codespaces/${id}/start`, { method: "POST" });
+      if (!res.ok) throw new Error("Failed");
+      await loadCodespaces();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "启动失败");
+    } finally {
+      setActionId(null);
+    }
+  }
+
+  async function stopCs(id: string) {
+    setActionId(id);
+    try {
+      const res = await fetch(`/api/codespaces/${id}/stop`, { method: "POST" });
+      if (!res.ok) throw new Error("Failed");
+      await loadCodespaces();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "停止失败");
+    } finally {
+      setActionId(null);
+    }
+  }
+
+  async function deleteCs(id: string) {
+    if (!confirm("确定要删除这个 Codespace 吗？此操作不可恢复。")) return;
+    setActionId(id);
+    try {
+      const res = await fetch(`/api/codespaces/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed");
+      setCodespaces((prev) => prev.filter((c) => c.id !== id));
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "删除失败");
+    } finally {
+      setActionId(null);
+    }
+  }
+
+  return (
+    <div className="max-w-4xl">
+      <div className="flex items-center justify-between mb-6">
+        <h2 className="text-xl font-semibold">环境</h2>
+        <button
+          onClick={() => setShowCreateModal(true)}
+          className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors text-sm font-medium"
+        >
+          <Plus className="w-4 h-4" />
+          添加环境
+        </button>
+      </div>
+
+      <div className="bg-card border border-border rounded-xl overflow-hidden">
+        <table className="w-full">
+          <thead>
+            <tr className="border-b border-border text-left text-sm text-muted-foreground">
+              <th className="px-6 py-3 font-medium">状态</th>
+              <th className="px-6 py-3 font-medium">仓库</th>
+              <th className="px-6 py-3 font-medium">分支</th>
+              <th className="px-6 py-3 font-medium">Codespace</th>
+              <th className="px-6 py-3 font-medium">创建时间</th>
+              <th className="px-6 py-3 font-medium text-right">操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <tr>
+                <td colSpan={6} className="px-6 py-12 text-center">
+                  <Loader2 className="w-6 h-6 animate-spin text-muted-foreground mx-auto" />
+                </td>
+              </tr>
+            ) : codespaces.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="px-6 py-12 text-center text-muted-foreground">
+                  <Server className="w-10 h-10 mx-auto mb-3 opacity-50" />
+                  <p className="text-sm">暂无 Codespaces</p>
+                  <p className="text-xs mt-1">点击上方按钮添加环境</p>
+                </td>
+              </tr>
+            ) : (
+              codespaces.map((cs) => {
+                const isActive = cs.status === "Available";
+                return (
+                  <tr
+                    key={cs.id}
+                    className="border-b border-border last:border-0 hover:bg-accent/30 transition-colors"
+                  >
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-2">
+                        <div className={`w-2 h-2 rounded-full ${isActive ? "bg-green-500" : "bg-amber-500"}`} />
+                        <span className="text-sm">{isActive ? "运行中" : "已停止"}</span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 text-sm font-medium">{cs.repo_owner}/{cs.repo_name}</td>
+                    <td className="px-6 py-4 text-sm">{cs.branch}</td>
+                    <td className="px-6 py-4 text-sm text-muted-foreground">{cs.codespace_name || "-"}</td>
+                    <td className="px-6 py-4 text-sm text-muted-foreground">
+                      {new Date(cs.created_at).toLocaleString()}
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center justify-end gap-1">
+                        {cs.web_url && (
+                          <a
+                            href={cs.web_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="p-1.5 rounded-lg hover:bg-accent transition-colors"
+                            title="在浏览器中打开"
+                          >
+                            <ExternalLink className="w-4 h-4" />
+                          </a>
+                        )}
+                        {isActive ? (
+                          <button
+                            onClick={() => stopCs(cs.id)}
+                            disabled={actionId === cs.id}
+                            className="p-1.5 rounded-lg hover:bg-accent transition-colors disabled:opacity-50"
+                            title="停止"
+                          >
+                            {actionId === cs.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Square className="w-4 h-4" />}
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => startCs(cs.id)}
+                            disabled={actionId === cs.id}
+                            className="p-1.5 rounded-lg hover:bg-accent transition-colors disabled:opacity-50"
+                            title="启动"
+                          >
+                            {actionId === cs.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+                          </button>
+                        )}
+                        <button
+                          onClick={() => deleteCs(cs.id)}
+                          disabled={actionId === cs.id}
+                          className="p-1.5 rounded-lg hover:bg-red-100 hover:text-red-600 transition-colors disabled:opacity-50"
+                          title="删除"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Create Modal */}
+      {showCreateModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-md">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+              <h3 className="text-lg font-semibold">添加环境</h3>
+              <button onClick={() => setShowCreateModal(false)} className="p-1 rounded-lg hover:bg-accent transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="px-6 py-6 space-y-4">
+              {/* Repo selector */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium">选择仓库</label>
+                <div className="relative">
+                  <button
+                    onClick={() => {
+                      setShowRepoDropdown(!showRepoDropdown);
+                      setShowBranchDropdown(false);
+                    }}
+                    disabled={repoLoading}
+                    className="flex items-center gap-2 w-full px-4 py-2.5 rounded-lg border border-border bg-background text-sm text-left hover:bg-accent/50 transition-colors disabled:opacity-60"
+                  >
+                    {repoLoading ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : selectedRepo ? (
+                      <span>{selectedRepo.owner} / {selectedRepo.name}</span>
+                    ) : (
+                      <span className="text-muted-foreground">选择仓库</span>
+                    )}
+                    <ChevronDown className="w-4 h-4 ml-auto text-muted-foreground" />
+                  </button>
+                  {showRepoDropdown && repos.length > 0 && (
+                    <div className="absolute top-full left-0 mt-1 w-full max-h-[240px] overflow-y-auto bg-popover border border-border rounded-lg shadow-lg z-50">
+                      {repos.map((repo) => (
+                        <button
+                          key={repo.full_name}
+                          onClick={() => {
+                            setSelectedRepo(repo);
+                            setShowRepoDropdown(false);
+                          }}
+                          className="flex flex-col w-full px-4 py-2.5 text-sm hover:bg-accent transition-colors text-left"
+                        >
+                          <span className="font-medium">{repo.name}</span>
+                          {repo.description && (
+                            <span className="text-xs text-muted-foreground truncate">{repo.description}</span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Branch selector */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium">选择分支</label>
+                <div className="relative">
+                  <button
+                    onClick={() => {
+                      if (!selectedRepo || branchLoading) return;
+                      setShowBranchDropdown(!showBranchDropdown);
+                      setShowRepoDropdown(false);
+                    }}
+                    disabled={!selectedRepo || branchLoading}
+                    className="flex items-center gap-2 w-full px-4 py-2.5 rounded-lg border border-border bg-background text-sm text-left hover:bg-accent/50 transition-colors disabled:opacity-60"
+                  >
+                    <GitBranch className="w-4 h-4 text-muted-foreground" />
+                    {branchLoading ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <span>{selectedBranch}</span>
+                    )}
+                    <ChevronDown className="w-4 h-4 ml-auto text-muted-foreground" />
+                  </button>
+                  {showBranchDropdown && branches.length > 0 && (
+                    <div className="absolute top-full left-0 mt-1 w-full max-h-[200px] overflow-y-auto bg-popover border border-border rounded-lg shadow-lg z-50">
+                      {branches.map((branch) => (
+                        <button
+                          key={branch}
+                          onClick={() => {
+                            setSelectedBranch(branch);
+                            setShowBranchDropdown(false);
+                          }}
+                          className="flex items-center gap-2 w-full px-4 py-2 text-sm hover:bg-accent transition-colors text-left"
+                        >
+                          <GitBranch className="w-3.5 h-3.5 text-muted-foreground" />
+                          <span>{branch}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  onClick={() => setShowCreateModal(false)}
+                  className="px-4 py-2 text-sm border border-border rounded-lg hover:bg-accent transition-colors"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={createCodespace}
+                  disabled={creating || !selectedRepo}
+                  className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors"
+                >
+                  {creating && <Loader2 className="w-4 h-4 animate-spin" />}
+                  创建
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

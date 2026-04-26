@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(HTTP_PROXY=http://localhost:63672 HTTPS_PROXY=http://localhost:63672 pnpm install --offline)",
+      "WebFetch(domain:github.com)",
+      "WebSearch"
+    ]
+  }
+}
