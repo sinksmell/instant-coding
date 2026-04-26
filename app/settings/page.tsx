@@ -15,10 +15,14 @@ import {
   Plus,
   MoreHorizontal,
   CheckCircle2,
+  Key,
+  Eye,
+  EyeOff,
+  Save,
 } from "lucide-react";
 import Link from "next/link";
 
-type SettingTab = "general" | "environment" | "connector" | "chat" | "interface" | "account" | "about";
+type SettingTab = "general" | "environment" | "connector" | "apikey" | "chat" | "interface" | "account" | "about";
 
 interface EnvConfig {
   id: string;
@@ -46,6 +50,7 @@ const sidebarItems: { id: SettingTab; label: string; icon: React.ReactNode; grou
   { id: "general", label: "通用", icon: <Settings2 className="w-4 h-4" />, group: "coder" },
   { id: "environment", label: "环境", icon: <Monitor className="w-4 h-4" />, group: "coder" },
   { id: "connector", label: "连接器", icon: <Plug className="w-4 h-4" />, group: "coder" },
+  { id: "apikey", label: "API Key", icon: <Key className="w-4 h-4" />, group: "coder" },
   { id: "chat", label: "对话", icon: <MessageSquare className="w-4 h-4" />, group: "coder" },
   { id: "interface", label: "界面", icon: <Palette className="w-4 h-4" />, group: "studio" },
   { id: "account", label: "账号", icon: <UserCircle className="w-4 h-4" />, group: "studio" },
@@ -244,6 +249,10 @@ export default function SettingsPage() {
               </div>
             )}
 
+            {activeTab === "apikey" && (
+              <ApiKeySettings />
+            )}
+
             {activeTab === "interface" && (
               <div className="max-w-2xl">
                 <h2 className="text-xl font-semibold mb-6">界面设置</h2>
@@ -322,6 +331,91 @@ export default function SettingsPage() {
               </div>
             )}
           </main>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ApiKeySettings() {
+  const [apiKey, setApiKey] = useState("");
+  const [showKey, setShowKey] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  const handleSave = async () => {
+    if (!apiKey.trim()) return;
+    setSaving(true);
+    try {
+      const res = await fetch("/api/user/api-key", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ apiKey: apiKey.trim() }),
+      });
+      if (res.ok) {
+        setSaved(true);
+        setTimeout(() => setSaved(false), 3000);
+      } else {
+        alert("保存失败，请重试");
+      }
+    } catch {
+      alert("保存失败，请重试");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="max-w-2xl">
+      <h2 className="text-xl font-semibold mb-6">API Key 管理</h2>
+      <div className="bg-card border border-border rounded-xl p-6 space-y-6">
+        <div className="flex items-start gap-4">
+          <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center flex-shrink-0">
+            <svg viewBox="0 0 24 24" className="w-5 h-5" fill="currentColor">
+              <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm0 2c5.514 0 10 4.486 10 10s-4.486 10-10 10S2 17.514 2 12 6.486 2 12 2zm-1 5v4H7v2h4v4h2v-4h4v-2h-4V7h-2z"/>
+            </svg>
+          </div>
+          <div className="flex-1">
+            <p className="font-medium">Claude API Key</p>
+            <p className="text-sm text-muted-foreground mt-1">
+              你的 API Key 仅存储在你的账户中，我们不会访问或使用它。
+              所有 AI 调用都将使用你自己的 Key。
+            </p>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <label className="text-sm font-medium">API Key</label>
+          <div className="relative">
+            <input
+              type={showKey ? "text" : "password"}
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder="sk-ant-api03-..."
+              className="w-full px-4 py-2.5 pr-10 rounded-lg border border-border bg-background text-sm outline-none focus:ring-2 focus:ring-ring"
+            />
+            <button
+              onClick={() => setShowKey(!showKey)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            >
+              {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            </button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            获取地址：<a href="https://console.anthropic.com/settings/keys" target="_blank" className="text-primary hover:underline">Anthropic Console</a>
+          </p>
+        </div>
+
+        <div className="flex items-center gap-3 pt-2">
+          <button
+            onClick={handleSave}
+            disabled={!apiKey.trim() || saving}
+            className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors text-sm font-medium"
+          >
+            <Save className="w-4 h-4" />
+            {saving ? "保存中..." : saved ? "已保存" : "保存"}
+          </button>
+          {saved && <span className="text-sm text-green-500">API Key 已保存</span>}
         </div>
       </div>
     </div>

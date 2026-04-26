@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Sidebar } from "@/components/sidebar";
 import { Header } from "@/components/header";
 import { QuickActions } from "@/components/quick-actions";
@@ -39,11 +40,61 @@ interface RecentTask {
 
 export default function Home() {
   const { data: session } = useSession();
+  const router = useRouter();
   const [selectedRepo, setSelectedRepo] = useState(repos[0]);
   const [selectedBranch, setSelectedBranch] = useState("main");
   const [showRepoDropdown, setShowRepoDropdown] = useState(false);
   const [showBranchDropdown, setShowBranchDropdown] = useState(false);
   const [input, setInput] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [quotaError, setQuotaError] = useState(false);
+
+  const handleSubmit = async () => {
+    if (!input.trim()) return;
+
+    if (!session) {
+      const isMock = process.env.NEXT_PUBLIC_MOCK_LOGIN === "true";
+      isMock
+        ? signIn("mock", { username: "dev-user", callbackUrl: "/" })
+        : signIn("github");
+      return;
+    }
+
+    setSubmitting(true);
+    setQuotaError(false);
+
+    try {
+      const res = await fetch("/api/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: input.slice(0, 50),
+          description: input,
+          repo_owner: selectedRepo.owner,
+          repo_name: selectedRepo.name,
+          branch: selectedBranch,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (res.status === 403) {
+        setQuotaError(true);
+        return;
+      }
+
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to create task");
+      }
+
+      router.push(`/chat/${data.task.id}`);
+    } catch (err) {
+      console.error("Create task failed:", err);
+      alert(err instanceof Error ? err.message : "创建任务失败");
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <div className="flex h-screen bg-background">
@@ -153,21 +204,15 @@ export default function Home() {
                   rows={4}
                 />
                 <div className="flex items-center justify-end px-4 pb-3">
+                  {quotaError && (
+                    <p className="text-xs text-red-500 mr-3">免费版每月限 50 次，请升级 Pro</p>
+                  )}
                   <button
-                    disabled={!input.trim()}
-                    onClick={() => {
-                      if (!session) {
-                        const isMock = process.env.NEXT_PUBLIC_MOCK_LOGIN === "true"
-                        isMock
-                          ? signIn("mock", { username: "dev-user", callbackUrl: "/" })
-                          : signIn("github")
-                        return
-                      }
-                      // TODO: create task API call
-                    }}
+                    disabled={!input.trim() || submitting}
+                    onClick={handleSubmit}
                     className="flex items-center gap-2 px-5 py-2 bg-muted text-muted-foreground rounded-lg hover:bg-primary hover:text-primary-foreground disabled:opacity-40 disabled:cursor-not-allowed transition-all text-sm font-medium"
                   >
-                    <span>编码</span>
+                    <span>{submitting ? "创建中..." : "编码"}</span>
                     <ArrowRight className="w-4 h-4" />
                   </button>
                 </div>

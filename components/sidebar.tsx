@@ -18,58 +18,8 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useSession, signIn, signOut } from "next-auth/react";
-
-interface Task {
-  id: string;
-  title: string;
-  repo: string;
-  branch: string;
-  status: "completed" | "in_progress" | "pending";
-  time: string;
-}
-
-const recentTasks: Task[] = [
-  {
-    id: "1",
-    title: "CI GitHub Page Issues",
-    repo: "files-cmp",
-    branch: "main",
-    status: "completed",
-    time: "4m42s",
-  },
-  {
-    id: "2",
-    title: "GitHub Pages Setup",
-    repo: "files-cmp",
-    branch: "feat/update_readme",
-    status: "completed",
-    time: "2m15s",
-  },
-  {
-    id: "3",
-    title: "优化 README 指南",
-    repo: "files-cmp",
-    branch: "feat/iblt-sparse-sync",
-    status: "completed",
-    time: "3m30s",
-  },
-  {
-    id: "4",
-    title: "Create New Feature Branch",
-    repo: "files-cmp",
-    branch: "main",
-    status: "pending",
-    time: "",
-  },
-  {
-    id: "5",
-    title: "重构代码建议",
-    repo: "files-cmp",
-    branch: "master",
-    status: "completed",
-    time: "5m10s",
-  },
-];
+import { useTasks } from "@/lib/tasks";
+import { Loader2 } from "lucide-react";
 
 export function Sidebar() {
   const [isExpanded, setIsExpanded] = useState(true);
@@ -121,47 +71,7 @@ export function Sidebar() {
       )}
 
       {/* Recent Tasks */}
-      <div className="flex-1 overflow-hidden">
-        <div className="px-3 py-2">
-          <button
-            onClick={() => setIsExpanded(!isExpanded)}
-            className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <ChevronDown className="w-4 h-4" />
-            {isExpanded && <span className="text-xs font-medium uppercase tracking-wider">所有任务</span>}
-          </button>
-        </div>
-
-        <div className="overflow-y-auto h-[calc(100%-40px)]">
-          {recentTasks.map((task) => (
-            <Link
-              key={task.id}
-              href={`/chat/${task.id}`}
-              className="flex items-start gap-3 px-3 py-2.5 hover:bg-accent transition-colors group"
-            >
-              <div className="mt-0.5 flex-shrink-0">
-                {task.status === "completed" ? (
-                  <CheckCircle2 className="w-4 h-4 text-green-500" />
-                ) : task.status === "in_progress" ? (
-                  <Clock className="w-4 h-4 text-amber-500" />
-                ) : (
-                  <Circle className="w-4 h-4 text-muted-foreground" />
-                )}
-              </div>
-              {isExpanded && (
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate group-hover:text-primary transition-colors">
-                    {task.title}
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    {task.repo} / {task.branch}
-                  </p>
-                </div>
-              )}
-            </Link>
-          ))}
-        </div>
-      </div>
+      <TaskList isExpanded={isExpanded} onToggleExpand={() => setIsExpanded(!isExpanded)} />
 
       {/* Bottom Actions */}
       <div className="border-t border-border p-3 space-y-1">
@@ -179,6 +89,64 @@ export function Sidebar() {
 }
 
 const isMockLogin = process.env.NEXT_PUBLIC_MOCK_LOGIN === "true";
+
+function TaskList({ isExpanded, onToggleExpand }: { isExpanded: boolean; onToggleExpand: () => void }) {
+  const { tasks, loading } = useTasks();
+
+  return (
+    <div className="flex-1 overflow-hidden">
+      <div className="px-3 py-2">
+        <button
+          onClick={onToggleExpand}
+          className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <ChevronDown className="w-4 h-4" />
+          {isExpanded && <span className="text-xs font-medium uppercase tracking-wider">所有任务</span>}
+        </button>
+      </div>
+
+      <div className="overflow-y-auto h-[calc(100%-40px)]">
+        {loading && (
+          <div className="flex justify-center py-4">
+            <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+          </div>
+        )}
+        {!loading && tasks.length === 0 && isExpanded && (
+          <div className="px-3 py-4 text-xs text-muted-foreground text-center">
+            暂无任务，点击"新建对话"开始
+          </div>
+        )}
+        {tasks.map((task) => (
+          <Link
+            key={task.id}
+            href={`/chat/${task.id}`}
+            className="flex items-start gap-3 px-3 py-2.5 hover:bg-accent transition-colors group"
+          >
+            <div className="mt-0.5 flex-shrink-0">
+              {task.status === "completed" ? (
+                <CheckCircle2 className="w-4 h-4 text-green-500" />
+              ) : task.status === "running" ? (
+                <Clock className="w-4 h-4 text-amber-500" />
+              ) : (
+                <Circle className="w-4 h-4 text-muted-foreground" />
+              )}
+            </div>
+            {isExpanded && (
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate group-hover:text-primary transition-colors">
+                  {task.title}
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {task.repo_name || "无仓库"} / {task.branch || "main"}
+                </p>
+              </div>
+            )}
+          </Link>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 function UserSection({ isExpanded }: { isExpanded: boolean }) {
   const { data: session } = useSession();
