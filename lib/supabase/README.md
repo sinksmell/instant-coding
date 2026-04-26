@@ -16,8 +16,14 @@ See [`schema.sql`](../schema.sql) for the current full DDL.
 
 **users**
 - `github_id` (BIGINT, unique) - GitHub user ID
-- `anthropic_api_key` (TEXT) - Claude API key (BYOK)
+- `anthropic_api_key_encrypted` (TEXT) - Claude API key, AES-256-GCM encrypted (BYOK)
 - `anthropic_base_url` (TEXT) - Optional API proxy URL
+
+### Security
+
+- API Keys are encrypted with AES-256-GCM before storage
+- Encryption key is `API_KEY_ENCRYPTION_KEY` env variable (never stored in DB)
+- RLS policies ensure users can only access their own data
 
 **tasks**
 - `status` - pending | running | completed | failed

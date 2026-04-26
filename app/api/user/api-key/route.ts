@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server"
 import { auth } from "@/auth"
 import { createClient } from "@/lib/supabase/server"
+import { encrypt } from "@/lib/crypto"
 
-// POST /api/user/api-key - Save user's Anthropic config
+// POST /api/user/api-key - Save user's Anthropic config (encrypted)
 export async function POST(req: NextRequest) {
   const session = await auth()
   if (!session?.user?.githubId) {
@@ -28,10 +29,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "User not found" }, { status: 404 })
   }
 
+  // Encrypt API key before storing
+  const encryptedKey = encrypt(apiKey)
+
   const { error } = await supabase
     .from("users")
     .update({
-      anthropic_api_key: apiKey,
+      anthropic_api_key_encrypted: encryptedKey,
       anthropic_base_url: baseUrl || null,
     })
     .eq("id", user.id)
@@ -55,7 +59,7 @@ export async function GET() {
 
   const { data: user } = await supabase
     .from("users")
-    .select("anthropic_api_key, anthropic_base_url")
+    .select("anthropic_api_key_encrypted, anthropic_base_url")
     .eq("github_id", session.user.githubId)
     .single()
 
@@ -64,7 +68,7 @@ export async function GET() {
   }
 
   return NextResponse.json({
-    hasKey: !!user.anthropic_api_key,
+    hasKey: !!user.anthropic_api_key_encrypted,
     hasBaseUrl: !!user.anthropic_base_url,
     // Never return the actual key
   })
