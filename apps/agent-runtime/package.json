@@ -1,0 +1,31 @@
+{
+  "name": "@instant-coding/agent-runtime",
+  "version": "0.1.0",
+  "description": "Thin WebSocket bridge between Instant Coding BFF and the claude CLI inside a Codespace",
+  "type": "module",
+  "bin": {
+    "agent-runtime": "./bin/agent-runtime.js"
+  },
+  "main": "./src/server.js",
+  "exports": {
+    ".": "./src/server.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node bin/agent-runtime.js",
+    "dev": "node --watch bin/agent-runtime.js",
+    "smoke": "node scripts/smoke.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.2",
+    "ws": "^8.18.0"
+  }
+}
