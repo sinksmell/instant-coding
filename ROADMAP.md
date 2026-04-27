@@ -25,6 +25,7 @@
 - 🟡 **M5**：BFF WebSocket 代理 + Codespace 生命周期 —— 代码完成：自定义 `server.ts` / `lib/agent/{jwt,lifecycle,proxy,upgrade-handler}.ts` / `.devcontainer/devcontainer.json` 模板 + 示例环境变量。BFF 层 unit smoke 通过（未鉴权 401 / 缺参 400 / 常规页 200）。待用户真 Codespace + Supabase 环境做 E2E 验证
 - 🟡 **M6**：真 Chat 页 —— `components/agent-chat.tsx` 完整消费 WS 协议（session_created / message / tool_call 折叠 / tool_result / thinking / permission_denied / token_usage / complete / session_ended / error），带状态栏（连接态 + 累计 tokens + cache hit + 每轮成本）、中断按钮、多轮复用 sessionId、initialPrompt 首访自动发送并用 localStorage 去重。删除旧 `lib/agent/executor.ts` 和未接线的 `chat-panel.tsx` / `code-editor.tsx`。`app/api/tasks/route.ts` 不再触发 executor，改由浏览器开 WS 驱动执行。待真 Codespace + Supabase E2E 验证
 - 🟡 **M7**：Diff 审查 + Git 面板 —— agent-runtime 新增 `/git/{status,diff,file,worktree,commit,push}` 6 个端点（21/21 smoke 通过）；BFF 加 `app/api/agent/git/[taskId]/[...path]` 透明 HTTP 代理 + `app/api/agent/pr/[taskId]` PR 创建路由；前端 `components/diff-panel.tsx` 用 Monaco `DiffEditor` 侧边对比 + 文件列表 + Commit / Push / Open PR 操作区；`/chat/[id]` 布局拆成 chat 左 + diff 右，带收起按钮。ARCHITECTURE §5.5 新增 REST 端点规格
+- 🟡 **M8**：终端面板 —— agent-runtime `/shell` WS 用 `node-pty` spawn 用户 `$SHELL`（smoke 测 echo 标记 + exit 通过，45 事件）；BFF `/api/agent/shell/ws` 复用 `handleAgentUpgrade` + `upstreamPath:"/shell"`；前端 `components/terminal-panel.tsx` 基于 xterm.js + fit addon，带状态条 + "Resume Claude" 按钮（发 `claude --resume <sid>\n` 到 pty）；`/chat/[id]` 右栏升级为 Diff/Shell 双 tab（两侧保持 mount，切换不丢状态）。ARCHITECTURE §5.6 新增 shell 协议规格
 
 ## 四、未来里程碑
 

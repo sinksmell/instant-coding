@@ -4,6 +4,7 @@ import express from "express";
 import { WebSocketServer } from "ws";
 import { expressAuthMiddleware, authEnabled } from "./auth.js";
 import { handleAgentConnection } from "./agent-ws.js";
+import { handleShellConnection } from "./shell-ws.js";
 import { mountGitRoutes } from "./git-routes.js";
 
 const PKG_VERSION = "0.1.0";
@@ -50,13 +51,7 @@ export async function startServer({ port = 3030, host = "127.0.0.1", cwd = proce
   wssAgent.on("connection", (ws, req) => handleAgentConnection(ws, req, { cwd }));
 
   const wssShell = new WebSocketServer({ noServer: true });
-  wssShell.on("connection", (ws) => {
-    // Reserved for M8 — xterm.js PTY bridge. Close 4501 (not implemented).
-    ws.send(
-      JSON.stringify({ type: "error", code: "not_implemented", message: "/shell is M8" })
-    );
-    ws.close(4501, "not_implemented");
-  });
+  wssShell.on("connection", (ws, req) => handleShellConnection(ws, req, { cwd }));
 
   server.on("upgrade", (req, socket, head) => {
     const url = req.url || "";

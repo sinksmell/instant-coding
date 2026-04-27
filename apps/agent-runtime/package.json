@@ -22,11 +22,13 @@
     "start": "node bin/agent-runtime.js",
     "dev": "node --watch bin/agent-runtime.js",
     "smoke": "node scripts/smoke.js",
-    "smoke:git": "node scripts/smoke-git.js"
+    "smoke:git": "node scripts/smoke-git.js",
+    "smoke:shell": "node scripts/smoke-shell.js"
   },
   "dependencies": {
     "express": "^4.19.2",
     "jsonwebtoken": "^9.0.2",
+    "node-pty": "^1.1.0",
     "ws": "^8.18.0"
   }
 }

@@ -26,8 +26,21 @@ async function main() {
   server.on("upgrade", (req, socket, head) => {
     const url = parse(req.url ?? "/", true)
     if (url.pathname === "/api/agent/ws") {
-      handleAgentUpgrade(req, socket, head, wss).catch((err) => {
-        console.error("[server] upgrade handler crashed:", err)
+      handleAgentUpgrade(req, socket, head, wss, {
+        upstreamPath: "/agent",
+        injectApiKey: true,
+      }).catch((err) => {
+        console.error("[server] agent upgrade crashed:", err)
+        try { socket.destroy() } catch { /* noop */ }
+      })
+      return
+    }
+    if (url.pathname === "/api/agent/shell/ws") {
+      handleAgentUpgrade(req, socket, head, wss, {
+        upstreamPath: "/shell",
+        injectApiKey: false,
+      }).catch((err) => {
+        console.error("[server] shell upgrade crashed:", err)
         try { socket.destroy() } catch { /* noop */ }
       })
       return
@@ -44,7 +57,8 @@ async function main() {
   server.listen(port, hostname, () => {
     const scheme = dev ? "http" : "http"
     console.log(`> Ready on ${scheme}://${hostname}:${port}`)
-    console.log(`> Agent WS endpoint: ws://${hostname}:${port}/api/agent/ws?taskId=<uuid>`)
+    console.log(`> Agent WS:   ws://${hostname}:${port}/api/agent/ws?taskId=<uuid>`)
+    console.log(`> Shell WS:   ws://${hostname}:${port}/api/agent/shell/ws?taskId=<uuid>`)
   })
 }
 

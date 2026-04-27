@@ -9,13 +9,14 @@ import { signRuntimeJwt } from "./jwt"
 import { proxyWebSocket } from "./proxy"
 
 /**
- * Handle an HTTP upgrade for /api/agent/ws?taskId=<uuid>.
+ * Handle an HTTP upgrade for /api/agent/ws?taskId=<uuid> (agent chat) or
+ * /api/agent/shell/ws?taskId=<uuid> (pty terminal, M8).
  *
  * Flow (matches ARCHITECTURE §4.1):
  *   1. Decode NextAuth session from cookies
  *   2. Load task + user + codespace metadata from Supabase
  *   3. ensureRunning() → boot the Codespace if needed, return endpoint URL
- *   4. Decrypt the user's ANTHROPIC_API_KEY
+ *   4. Decrypt the user's ANTHROPIC_API_KEY (chat path only)
  *   5. Sign a short-lived runtime JWT
  *   6. Accept the WS handshake, then proxy traffic both directions
  */
@@ -24,6 +25,10 @@ export async function handleAgentUpgrade(
   socket: Duplex,
   head: Buffer,
   wss: WebSocketServer,
+  opts: { upstreamPath: "/agent" | "/shell"; injectApiKey: boolean } = {
+    upstreamPath: "/agent",
+    injectApiKey: true,
+  },
 ): Promise<void> {
   try {
     const url = new URL(req.url ?? "/", "http://localhost")
@@ -82,9 +87,9 @@ export async function handleAgentUpgrade(
       throw err
     }
 
-    // ── 4. Decrypt API key (optional — runtime can also inherit env) ──
+    // ── 4. Decrypt API key (chat path only — pty doesn't need it) ─────
     let apiKey: string | null = null
-    if (user.anthropic_api_key_encrypted) {
+    if (opts.injectApiKey && user.anthropic_api_key_encrypted) {
       try {
         apiKey = decrypt(user.anthropic_api_key_encrypted)
       } catch (err) {
@@ -96,15 +101,18 @@ export async function handleAgentUpgrade(
     const runtimeJwt = signRuntimeJwt(user.id)
 
     // ── 6. Accept and proxy ───────────────────────────────────
+    const upstreamUrl = endpoint.httpUrl.replace(/^http/, "ws") + opts.upstreamPath
     wss.handleUpgrade(req, socket, head, (ws: WebSocket) => {
       const headers: Record<string, string> = {
         Authorization: `Bearer ${runtimeJwt}`,
         ...endpoint.headers,
       }
       if (apiKey) headers["X-Anthropic-Api-Key"] = apiKey
-      if (user.anthropic_base_url) headers["X-Anthropic-Base-Url"] = user.anthropic_base_url
+      if (opts.injectApiKey && user.anthropic_base_url) {
+        headers["X-Anthropic-Base-Url"] = user.anthropic_base_url
+      }
 
-      proxyWebSocket(ws, endpoint.wsUrl, headers)
+      proxyWebSocket(ws, upstreamUrl, headers)
     })
   } catch (err) {
     console.error("[agent-upgrade] fatal:", err)

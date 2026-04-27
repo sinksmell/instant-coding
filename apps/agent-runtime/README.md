@@ -16,6 +16,7 @@ Currently PoC. Lives in the main repo under `apps/agent-runtime/`; will be extra
 - Node 20+
 - `claude` CLI on `PATH` (`npm i -g @anthropic-ai/claude-code`)
 - `ANTHROPIC_API_KEY` available either in the process env or passed per-connection via `X-Anthropic-Api-Key` WS handshake header
+- C++ toolchain for building `node-pty` on install (`python3`, `make`, `g++` / Xcode Command Line Tools on macOS). If `npm i` leaves you without `node_modules/node-pty/build/Release/pty.node`, run `npm rebuild node-pty` — node-pty's prebuild fetch silently falls back to an unbuilt state in some environments.
 
 ## Run
 
@@ -30,13 +31,19 @@ Dev with auto-reload:
 npm run dev
 ```
 
-## Smoke test (real claude call)
-
-Boots the server, opens a WS, sends one prompt, asserts `session_created` + `complete` fire. **Makes a real billed API call.**
+## Smoke tests
 
 ```bash
 cd apps/agent-runtime
+
+# /agent WS — real claude call; billed
 ANTHROPIC_API_KEY=sk-... npm run smoke
+
+# /git REST — offline; creates a throwaway repo in $TMPDIR
+npm run smoke:git
+
+# /shell WS — offline; spawns a pty, echoes a marker, exits
+npm run smoke:shell
 ```
 
 ## WS protocol

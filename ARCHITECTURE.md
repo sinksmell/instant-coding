@@ -37,7 +37,7 @@ Instant Coding 是 B-S 三段式架构：浏览器 ⟷ Next.js BFF ⟷ Codespace
    - Supabase 元数据管理（任务 / 会话外键 / token 用量）
 3. **Codespace agent-runtime**（薄桥接，独立 repo `@instant-coding/agent-runtime`）：核心只做协议转换。
    - `/agent` WS：`spawn('claude', [...])` 进程桥，stdin ⟷ WS 输入，stream-json stdout ⟷ WS 事件
-   - `/shell` WS：`node-pty` spawn bash（M8）
+   - `/shell` WS：`node-pty` spawn 用户 `$SHELL`，随连接生命周期，client ⟷ pty stdio；支持 `{type:"resize"}` SIGWINCH
    - `/git/*` REST：`status`/`diff`/`file`/`worktree`/`commit`/`push`（M7，见 §5.5）
    - `/fs` REST：M9
    - Session 持久化**完全依赖** `~/.claude/projects/*.jsonl`（Claude Code 自维护），**不建消息表**
@@ -283,6 +283,19 @@ BFF 是**透明代理**，浏览器 ⟷ BFF 与 BFF ⟷ runtime 走同一套 sch
 PR 创建不经 runtime，由 BFF 自己用 octokit 开：`POST /api/agent/pr/<taskId>` body `{ title, body?, head, base? }` → 调 `createPullRequest()` → 回写 `task.pr_url` → 返回 `{ url, number, state }`。
 
 路径校验：所有 `path` 入参拒绝绝对路径、拒绝 `..`；`/git/worktree` 额外用 `path.resolve` 防逃逸。`ref` 白名单 `[\w./-]+`。
+
+### 5.6 Shell WS（/shell，M8 起）
+
+Runtime `/shell` —— `node-pty` spawn 用户 `$SHELL`（fallback `/bin/bash`，Windows `powershell.exe`），每连接一个 pty。BFF 以 `/api/agent/shell/ws?taskId=<id>` 反向代理（`handleAgentUpgrade(..., { upstreamPath: "/shell", injectApiKey: false })`，不注入 `X-Anthropic-*` 头）。
+
+协议（JSON，一帧一条）：
+
+- client → server: `{type:"input", data: string}` / `{type:"resize", cols, rows}`
+- server → client: `{type:"output", data: string}` / `{type:"exit", code, signal}` / `{type:"error", code, message}`
+
+设计点：
+- 用户可在终端里 `claude --resume <id>` 接管 `/agent` 的 session，共享 `~/.claude/projects/*.jsonl`（前端 `TerminalPanel` 的 "Resume Claude" 按钮直接发这条命令）
+- 输出背压：单连接缓冲超 1MB 时丢弃新输出而不是 OOM；`pty.resize` 上限 500×200
 
 ## 六、鉴权与密钥流转
 

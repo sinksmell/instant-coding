@@ -3,16 +3,30 @@
 import { useState } from "react"
 import { useParams } from "next/navigation"
 import Link from "next/link"
-import { ArrowLeft, ExternalLink, Loader2, FileDiff, PanelRightClose, PanelRightOpen } from "lucide-react"
+import {
+  ArrowLeft,
+  ExternalLink,
+  Loader2,
+  FileDiff,
+  Terminal as TerminalIcon,
+  PanelRightClose,
+  PanelRightOpen,
+} from "lucide-react"
 import { Sidebar } from "@/components/sidebar"
 import { AgentChat } from "@/components/agent-chat"
 import { DiffPanel } from "@/components/diff-panel"
+import { TerminalPanel } from "@/components/terminal-panel"
 import { useTask } from "@/lib/tasks"
+import { cn } from "@/lib/utils"
+
+type RightTab = "diff" | "shell"
 
 export default function ChatPage() {
   const params = useParams<{ id: string }>()
   const { task, loading, error } = useTask(params.id)
-  const [showDiff, setShowDiff] = useState(true)
+  const [showRight, setShowRight] = useState(true)
+  const [rightTab, setRightTab] = useState<RightTab>("diff")
+  const [chatSessionId, setChatSessionId] = useState<string | null>(null)
 
   if (loading) {
     return (
@@ -61,15 +75,28 @@ export default function ChatPage() {
               </div>
             </div>
           </div>
+
           <div className="flex items-center gap-2">
+            {showRight && (
+              <div className="flex items-center gap-1 p-0.5 bg-muted rounded-lg">
+                <TabBtn active={rightTab === "diff"} onClick={() => setRightTab("diff")} icon={FileDiff}>
+                  Diff
+                </TabBtn>
+                <TabBtn active={rightTab === "shell"} onClick={() => setRightTab("shell")} icon={TerminalIcon}>
+                  Shell
+                </TabBtn>
+              </div>
+            )}
             <button
-              onClick={() => setShowDiff((v) => !v)}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border hover:bg-accent transition-colors text-xs"
-              title={showDiff ? "隐藏 diff 面板" : "显示 diff 面板"}
+              onClick={() => setShowRight((v) => !v)}
+              className="p-2 rounded-lg border border-border hover:bg-accent transition-colors"
+              title={showRight ? "隐藏右侧面板" : "显示右侧面板"}
             >
-              {showDiff ? <PanelRightClose className="w-4 h-4" /> : <PanelRightOpen className="w-4 h-4" />}
-              <FileDiff className="w-4 h-4" />
-              Diff
+              {showRight ? (
+                <PanelRightClose className="w-4 h-4" />
+              ) : (
+                <PanelRightOpen className="w-4 h-4" />
+              )}
             </button>
             {task.pr_url && (
               <Link
@@ -88,16 +115,54 @@ export default function ChatPage() {
         </header>
 
         <div className="flex-1 flex overflow-hidden">
-          <div className={showDiff ? "flex-1 border-r border-border overflow-hidden" : "flex-1 overflow-hidden"}>
-            <AgentChat taskId={task.id} initialPrompt={task.description} />
+          <div className={showRight ? "flex-1 border-r border-border overflow-hidden" : "flex-1 overflow-hidden"}>
+            <AgentChat
+              taskId={task.id}
+              initialPrompt={task.description}
+              onSessionIdChange={setChatSessionId}
+            />
           </div>
-          {showDiff && (
+          {showRight && (
             <div className="w-[560px] overflow-hidden">
-              <DiffPanel taskId={task.id} baseBranch={task.branch || "main"} />
+              {/*
+                Both panels are kept mounted so switching tabs preserves their
+                state (WS connections, terminal scroll, diff selection).
+              */}
+              <div className={cn("h-full", rightTab !== "diff" && "hidden")}>
+                <DiffPanel taskId={task.id} baseBranch={task.branch || "main"} />
+              </div>
+              <div className={cn("h-full", rightTab !== "shell" && "hidden")}>
+                <TerminalPanel taskId={task.id} claudeSessionId={chatSessionId} />
+              </div>
             </div>
           )}
         </div>
       </div>
     </div>
+  )
+}
+
+function TabBtn({
+  active,
+  onClick,
+  icon: Icon,
+  children,
+}: {
+  active: boolean
+  onClick: () => void
+  icon: typeof FileDiff
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        "flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-colors",
+        active ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+      )}
+    >
+      <Icon className="w-3.5 h-3.5" />
+      {children}
+    </button>
   )
 }

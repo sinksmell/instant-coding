@@ -102,9 +102,11 @@ export interface AgentChatProps {
   taskId: string
   /** Auto-sent on first ever visit (tracked in localStorage). */
   initialPrompt?: string
+  /** Called whenever a new sessionId is captured from the runtime */
+  onSessionIdChange?: (sessionId: string) => void
 }
 
-export function AgentChat({ taskId, initialPrompt }: AgentChatProps) {
+export function AgentChat({ taskId, initialPrompt, onSessionIdChange }: AgentChatProps) {
   const [items, setItems] = useState<ChatItem[]>(() => {
     if (initialPrompt) {
       return [{ kind: "user", content: initialPrompt, ts: Date.now() }]
@@ -164,6 +166,7 @@ export function AgentChat({ taskId, initialPrompt }: AgentChatProps) {
         case "session_created":
           setSessionId(evt.sessionId)
           sessionIdRef.current = evt.sessionId
+          onSessionIdChange?.(evt.sessionId)
           break
         case "message":
           appendItem({
