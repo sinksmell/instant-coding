@@ -154,7 +154,7 @@ export function TerminalPanel({ taskId, claudeSessionId }: TerminalPanelProps) {
         {claudeSessionId && (
           <button
             onClick={() => sendInput(`claude --resume ${claudeSessionId}\n`)}
-            className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-muted hover:bg-accent transition-colors"
+            className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-muted hover:bg-accent active:scale-95 transition-all"
             title={`在终端里接管 session ${claudeSessionId}`}
           >
             <Sparkles className="w-3.5 h-3.5" />
@@ -163,7 +163,7 @@ export function TerminalPanel({ taskId, claudeSessionId }: TerminalPanelProps) {
         )}
         <button
           onClick={() => sendInput("\x0c")}
-          className="p-1 rounded hover:bg-accent"
+          className="p-1 rounded hover:bg-accent active:scale-95 transition-all"
           title="Clear (Ctrl+L)"
         >
           <Play className="w-3.5 h-3.5 rotate-180" />

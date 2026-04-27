@@ -435,10 +435,12 @@ function Avatar({ role }: { role: "user" | "assistant" }) {
 
 function ItemRow({ item }: { item: ChatItem }) {
   if (item.kind === "user") {
+    // Asymmetric corner (rounded-br-md) per claudecodeui — gives the bubble a
+    // visual "pointer" toward the avatar without needing an actual arrow.
     return (
       <div className="flex gap-3 flex-row-reverse">
         <Avatar role="user" />
-        <div className="max-w-[80%] bg-primary text-primary-foreground rounded-2xl rounded-tr-none px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap">
+        <div className="max-w-[80%] bg-primary text-primary-foreground rounded-2xl rounded-br-md px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap shadow-sm">
           {item.content}
         </div>
       </div>
@@ -448,7 +450,7 @@ function ItemRow({ item }: { item: ChatItem }) {
     return (
       <div className="flex gap-3">
         <Avatar role="assistant" />
-        <div className="max-w-[80%] bg-muted rounded-2xl rounded-tl-none px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap">
+        <div className="max-w-[80%] bg-muted rounded-2xl rounded-bl-md px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap">
           {item.content}
         </div>
       </div>
@@ -457,12 +459,14 @@ function ItemRow({ item }: { item: ChatItem }) {
   if (item.kind === "thinking") {
     return (
       <div className="flex gap-3">
-        <div className="w-8 h-8 rounded-lg bg-muted text-muted-foreground flex items-center justify-center flex-shrink-0">
+        <div className="w-8 h-8 rounded-lg bg-muted/60 text-muted-foreground flex items-center justify-center flex-shrink-0">
           <Brain className="w-4 h-4" />
         </div>
-        <details className="max-w-[80%] bg-muted/40 rounded-xl px-3 py-2 text-xs text-muted-foreground italic">
-          <summary className="cursor-pointer select-none">extended thinking</summary>
-          <pre className="mt-2 whitespace-pre-wrap not-italic">{item.content}</pre>
+        <details className="max-w-[80%] bg-muted/30 border-l-2 border-violet-400/40 rounded-r-xl px-3 py-2 text-xs text-muted-foreground italic">
+          <summary className="cursor-pointer select-none hover:text-foreground transition-colors">
+            extended thinking
+          </summary>
+          <pre className="mt-2 whitespace-pre-wrap not-italic font-mono leading-relaxed">{item.content}</pre>
         </details>
       </div>
     )
@@ -476,14 +480,16 @@ function ItemRow({ item }: { item: ChatItem }) {
         <div className="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-600 flex items-center justify-center flex-shrink-0">
           <AlertTriangle className="w-4 h-4" />
         </div>
-        <div className="flex-1 bg-amber-500/10 border border-amber-500/30 rounded-xl px-3 py-2 text-xs">
+        <div className="flex-1 bg-amber-500/10 border-l-2 border-amber-500/60 rounded-r-xl px-3 py-2 text-xs">
           <div className="font-medium text-amber-700 dark:text-amber-400 mb-1">
             {item.denials.length} 个工具调用被权限策略阻止
           </div>
           <ul className="space-y-0.5 text-muted-foreground font-mono">
             {item.denials.map((d, i) => (
-              <li key={i}>
-                {d.toolName}: <span className="text-foreground">{JSON.stringify(d.input).slice(0, 120)}</span>
+              <li key={i} className="truncate">
+                <span className="text-amber-700 dark:text-amber-400">{d.toolName}</span>
+                <span className="text-muted-foreground">: </span>
+                <span className="text-foreground">{JSON.stringify(d.input).slice(0, 120)}</span>
               </li>
             ))}
           </ul>
@@ -497,12 +503,32 @@ function ItemRow({ item }: { item: ChatItem }) {
       <div className="w-8 h-8 rounded-lg bg-red-500/20 text-red-600 flex items-center justify-center flex-shrink-0">
         <XCircle className="w-4 h-4" />
       </div>
-      <div className="flex-1 bg-red-500/5 border border-red-500/30 rounded-xl px-3 py-2 text-xs">
+      <div className="flex-1 bg-red-500/5 border-l-2 border-red-500/60 rounded-r-xl px-3 py-2 text-xs">
         <div className="font-mono text-red-600 dark:text-red-400 mb-0.5">{item.code}</div>
         <div className="text-muted-foreground">{item.message}</div>
       </div>
     </div>
   )
+}
+
+/**
+ * Map Claude tool names to a category color used for the left-border accent
+ * on tool cards. Matches claudecodeui's semantic palette roughly:
+ *   green  — read-only / inspection
+ *   amber  — writes / edits
+ *   violet — subagents / meta
+ *   sky    — shell / bash
+ *   muted  — everything else
+ */
+function toolAccent(name: string): { border: string; text: string } {
+  const n = name.toLowerCase()
+  if (n === "bash" || n.startsWith("shell")) return { border: "border-l-sky-400", text: "text-sky-400" }
+  if (n === "edit" || n === "write" || n === "multiedit" || n === "notebookedit")
+    return { border: "border-l-amber-400", text: "text-amber-400" }
+  if (n === "task") return { border: "border-l-violet-400", text: "text-violet-400" }
+  if (n === "read" || n === "glob" || n === "grep" || n === "ls" || n === "webfetch" || n === "websearch")
+    return { border: "border-l-emerald-400", text: "text-emerald-400" }
+  return { border: "border-l-muted-foreground/40", text: "text-muted-foreground" }
 }
 
 function ToolItem({
@@ -519,6 +545,7 @@ function ToolItem({
     return ` ${keys[0]}: ${v}`.slice(0, 100)
   }, [item.input])
 
+  const accent = toolAccent(item.name)
   const statusIcon = !item.result ? (
     <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" />
   ) : item.result.isError ? (
@@ -529,20 +556,25 @@ function ToolItem({
 
   return (
     <div className="flex gap-3">
-      <div className="w-8 h-8 rounded-lg bg-muted text-muted-foreground flex items-center justify-center flex-shrink-0">
+      <div className="w-8 h-8 rounded-lg bg-muted/60 text-muted-foreground flex items-center justify-center flex-shrink-0">
         <Wrench className="w-4 h-4" />
       </div>
-      <div className="flex-1 border border-border rounded-xl overflow-hidden bg-card">
+      <div
+        className={cn(
+          "flex-1 border border-border rounded-xl overflow-hidden bg-card border-l-2",
+          accent.border,
+        )}
+      >
         <button
           onClick={() => setOpen((v) => !v)}
-          className="w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-accent transition-colors text-left"
+          className="w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-accent/60 active:scale-[0.995] transition-all text-left"
         >
           {open ? (
             <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />
           ) : (
             <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
           )}
-          <span className="font-mono font-medium">{item.name}</span>
+          <span className={cn("font-mono font-medium", accent.text)}>{item.name}</span>
           <span className="text-muted-foreground truncate flex-1">{summary}</span>
           {statusIcon}
         </button>
@@ -550,7 +582,7 @@ function ToolItem({
           <div className="border-t border-border bg-muted/30 px-3 py-2 space-y-2">
             <div>
               <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">input</div>
-              <pre className="text-xs font-mono whitespace-pre-wrap break-all">
+              <pre className="text-xs font-mono whitespace-pre-wrap break-all leading-relaxed">
                 {JSON.stringify(item.input, null, 2)}
               </pre>
             </div>
@@ -561,7 +593,7 @@ function ToolItem({
                 </div>
                 <pre
                   className={cn(
-                    "text-xs font-mono whitespace-pre-wrap break-all max-h-[320px] overflow-y-auto",
+                    "text-xs font-mono whitespace-pre-wrap break-all max-h-[320px] overflow-y-auto leading-relaxed",
                     item.result.isError && "text-red-600 dark:text-red-400",
                   )}
                 >
@@ -627,7 +659,7 @@ function Composer({
         {canAbort ? (
           <button
             onClick={onAbort}
-            className="p-2 rounded-lg bg-red-500/10 text-red-600 hover:bg-red-500/20 transition-colors"
+            className="p-2 rounded-lg bg-red-500/10 text-red-600 hover:bg-red-500/20 active:scale-95 transition-all"
             title="中断当前回合"
           >
             <Square className="w-4 h-4" fill="currentColor" />
@@ -636,7 +668,7 @@ function Composer({
           <button
             onClick={onSubmit}
             disabled={!canSend}
-            className="p-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            className="p-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100 transition-all"
           >
             <Send className="w-4 h-4" />
           </button>

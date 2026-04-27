@@ -1,55 +1,71 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import {
   Plus,
   Search,
-  MessageSquare,
-  GitBranch,
   Settings,
   ChevronDown,
-  Clock,
-  CheckCircle2,
-  Circle,
+  ChevronLeft,
+  ChevronRight,
   X,
   User,
   LogOut,
+  Loader2,
 } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useSession, signIn, signOut } from "next-auth/react";
 import { useTasks } from "@/lib/tasks";
-import { Loader2 } from "lucide-react";
+import type { Task } from "@/lib/tasks";
 
 export function Sidebar() {
   const [isExpanded, setIsExpanded] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+  const router = useRouter();
 
   return (
     <aside
       className={cn(
-        "flex flex-col border-r border-border bg-card h-screen transition-all duration-300",
-        isExpanded ? "w-64" : "w-16"
+        "flex flex-col border-r border-border bg-card h-screen transition-[width] duration-200",
+        isExpanded ? "w-64" : "w-14",
       )}
     >
       {/* Logo */}
-      <div className="flex items-center gap-3 px-4 py-4 border-b border-border">
-        <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center flex-shrink-0">
-          <svg viewBox="0 0 24 24" className="w-5 h-5 text-primary-foreground" fill="none" stroke="currentColor" strokeWidth="2">
+      <div className="flex items-center gap-2.5 px-3 py-3 border-b border-border h-14">
+        <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center flex-shrink-0 shadow-sm">
+          <svg viewBox="0 0 24 24" className="w-4 h-4 text-primary-foreground" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M12 2L2 7l10 5 10-5-10-5z" />
             <path d="M2 17l10 5 10-5" />
             <path d="M2 12l10 5 10-5" />
           </svg>
         </div>
         {isExpanded && (
-          <span className="font-semibold text-lg tracking-tight">Instant Coding</span>
+          <span className="font-semibold text-[15px] tracking-tight flex-1 truncate">Instant Coding</span>
+        )}
+        {isExpanded && (
+          <button
+            onClick={() => setIsExpanded(false)}
+            className="p-1 rounded hover:bg-accent active:scale-95 transition-all text-muted-foreground"
+            title="折叠侧边栏"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </button>
         )}
       </div>
 
       {/* New Chat Button */}
-      <div className="px-3 py-3">
-        <button className="flex items-center gap-2 w-full px-3 py-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">
-          <Plus className="w-4 h-4" />
+      <div className={cn("py-2", isExpanded ? "px-3" : "px-2")}>
+        <button
+          onClick={() => router.push("/")}
+          className={cn(
+            "flex items-center gap-2 w-full rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 active:scale-[0.98] transition-all shadow-sm",
+            isExpanded ? "px-3 py-2 justify-start" : "p-2 justify-center",
+          )}
+          title="新建对话"
+        >
+          <Plus className="w-4 h-4 flex-shrink-0" />
           {isExpanded && <span className="text-sm font-medium">新建对话</span>}
         </button>
       </div>
@@ -58,28 +74,40 @@ export function Sidebar() {
       {isExpanded && (
         <div className="px-3 pb-2">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
             <input
               type="text"
-              placeholder="搜索对话"
+              placeholder="搜索任务"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 rounded-lg bg-muted text-sm outline-none focus:ring-2 focus:ring-ring placeholder:text-muted-foreground"
+              className="w-full pl-8 pr-7 py-1.5 rounded-lg bg-muted text-xs outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground"
             />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery("")}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
         </div>
       )}
 
-      {/* Recent Tasks */}
-      <TaskList isExpanded={isExpanded} onToggleExpand={() => setIsExpanded(!isExpanded)} />
+      {/* Task list */}
+      <TaskList isExpanded={isExpanded} onExpand={() => setIsExpanded(true)} query={searchQuery} />
 
-      {/* Bottom Actions */}
-      <div className="border-t border-border p-3 space-y-1">
+      {/* Bottom actions */}
+      <div className="border-t border-border p-2 space-y-0.5">
         <Link
           href="/settings"
-          className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-accent transition-colors text-muted-foreground hover:text-foreground"
+          className={cn(
+            "flex items-center gap-2.5 rounded-lg hover:bg-accent active:scale-[0.98] transition-all text-muted-foreground hover:text-foreground",
+            isExpanded ? "px-3 py-2" : "p-2 justify-center",
+          )}
+          title="设置"
         >
-          <Settings className="w-4 h-4" />
+          <Settings className="w-4 h-4 flex-shrink-0" />
           {isExpanded && <span className="text-sm">设置</span>}
         </Link>
         <UserSection isExpanded={isExpanded} />
@@ -90,62 +118,132 @@ export function Sidebar() {
 
 const isMockLogin = process.env.NEXT_PUBLIC_MOCK_LOGIN === "true";
 
-function TaskList({ isExpanded, onToggleExpand }: { isExpanded: boolean; onToggleExpand: () => void }) {
+function TaskList({
+  isExpanded,
+  onExpand,
+  query,
+}: {
+  isExpanded: boolean;
+  onExpand: () => void;
+  query: string;
+}) {
   const { tasks, loading } = useTasks();
 
-  return (
-    <div className="flex-1 overflow-hidden">
-      <div className="px-3 py-2">
-        <button
-          onClick={onToggleExpand}
-          className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors"
-        >
-          <ChevronDown className="w-4 h-4" />
-          {isExpanded && <span className="text-xs font-medium uppercase tracking-wider">所有任务</span>}
-        </button>
-      </div>
+  const filtered = useMemo(() => {
+    if (!query.trim()) return tasks;
+    const q = query.toLowerCase();
+    return tasks.filter(
+      (t) =>
+        t.title.toLowerCase().includes(q) ||
+        t.description.toLowerCase().includes(q) ||
+        t.repo_name?.toLowerCase().includes(q),
+    );
+  }, [tasks, query]);
 
-      <div className="overflow-y-auto h-[calc(100%-40px)]">
+  return (
+    <div className="flex-1 overflow-hidden flex flex-col">
+      {isExpanded && (
+        <div className="px-3 pt-2 pb-1 flex items-center gap-1.5">
+          <ChevronDown className="w-3 h-3 text-muted-foreground" />
+          <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+            任务历史
+          </span>
+          <span className="text-[10px] text-muted-foreground/70 ml-auto">
+            {loading ? "…" : filtered.length}
+          </span>
+        </div>
+      )}
+
+      <div className="flex-1 overflow-y-auto px-1">
         {loading && (
-          <div className="flex justify-center py-4">
-            <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+          <div className="flex justify-center py-3">
+            <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" />
           </div>
         )}
-        {!loading && tasks.length === 0 && isExpanded && (
-          <div className="px-3 py-4 text-xs text-muted-foreground text-center">
-            暂无任务，点击"新建对话"开始
+        {!loading && filtered.length === 0 && isExpanded && (
+          <div className="px-3 py-6 text-xs text-muted-foreground text-center">
+            {query ? "无匹配任务" : "暂无任务"}
           </div>
         )}
-        {tasks.map((task) => (
-          <Link
-            key={task.id}
-            href={`/chat/${task.id}`}
-            className="flex items-start gap-3 px-3 py-2.5 hover:bg-accent transition-colors group"
-          >
-            <div className="mt-0.5 flex-shrink-0">
-              {task.status === "completed" ? (
-                <CheckCircle2 className="w-4 h-4 text-green-500" />
-              ) : task.status === "running" ? (
-                <Clock className="w-4 h-4 text-amber-500" />
-              ) : (
-                <Circle className="w-4 h-4 text-muted-foreground" />
-              )}
-            </div>
-            {isExpanded && (
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium truncate group-hover:text-primary transition-colors">
-                  {task.title}
-                </p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  {task.repo_name || "无仓库"} / {task.branch || "main"}
-                </p>
-              </div>
-            )}
-          </Link>
+        {filtered.map((task) => (
+          <TaskRow key={task.id} task={task} isExpanded={isExpanded} onRowHoverExpand={onExpand} />
         ))}
       </div>
     </div>
   );
+}
+
+function TaskRow({
+  task,
+  isExpanded,
+  onRowHoverExpand,
+}: {
+  task: Task;
+  isExpanded: boolean;
+  onRowHoverExpand: () => void;
+}) {
+  const dot = statusDot(task.status);
+
+  return (
+    <Link
+      href={`/chat/${task.id}`}
+      onMouseEnter={!isExpanded ? onRowHoverExpand : undefined}
+      className={cn(
+        "group relative flex items-center gap-2 rounded-md hover:bg-accent active:scale-[0.99] transition-all",
+        isExpanded ? "px-2 py-1.5" : "p-2 justify-center",
+      )}
+      title={isExpanded ? undefined : task.title}
+    >
+      <span
+        className={cn("w-1.5 h-1.5 rounded-full flex-shrink-0", dot)}
+        aria-hidden
+      />
+      {isExpanded && (
+        <>
+          <div className="flex-1 min-w-0">
+            <div className="text-[13px] font-medium truncate group-hover:text-foreground text-foreground/90">
+              {task.title}
+            </div>
+            <div className="text-[10px] text-muted-foreground truncate flex items-center gap-1.5 mt-0.5">
+              {task.repo_name && <span className="truncate">{task.repo_name}</span>}
+              {task.repo_name && <span className="text-muted-foreground/40">·</span>}
+              <span>{relativeTime(task.created_at)}</span>
+            </div>
+          </div>
+          <ChevronRight className="w-3.5 h-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
+        </>
+      )}
+    </Link>
+  );
+}
+
+function statusDot(status: Task["status"]): string {
+  switch (status) {
+    case "completed":
+      return "bg-green-500";
+    case "running":
+      return "bg-amber-500 animate-pulse";
+    case "failed":
+      return "bg-red-500";
+    default:
+      return "bg-muted-foreground/50";
+  }
+}
+
+function relativeTime(iso: string): string {
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return "";
+  const diff = Date.now() - then;
+  const m = Math.floor(diff / 60_000);
+  if (m < 1) return "刚刚";
+  if (m < 60) return `${m} 分钟前`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h} 小时前`;
+  const d = Math.floor(h / 24);
+  if (d < 30) return `${d} 天前`;
+  const mo = Math.floor(d / 30);
+  if (mo < 12) return `${mo} 月前`;
+  return `${Math.floor(mo / 12)} 年前`;
 }
 
 function UserSection({ isExpanded }: { isExpanded: boolean }) {
@@ -155,26 +253,30 @@ function UserSection({ isExpanded }: { isExpanded: boolean }) {
     return (
       <button
         onClick={() => signOut()}
-        className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-accent transition-colors w-full text-left"
-        title="点击退出登录"
+        className={cn(
+          "flex items-center gap-2.5 rounded-lg hover:bg-accent active:scale-[0.98] transition-all w-full text-left",
+          isExpanded ? "px-3 py-2" : "p-2 justify-center",
+        )}
+        title={isExpanded ? "点击退出登录" : session.user.name || "退出"}
       >
         {session.user.image ? (
+          // eslint-disable-next-line @next/next/no-img-element
           <img
             src={session.user.image}
             alt={session.user.name || ""}
-            className="w-6 h-6 rounded-full"
+            className="w-6 h-6 rounded-full flex-shrink-0"
           />
         ) : (
-          <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center text-xs text-primary-foreground font-medium">
+          <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center text-[11px] text-primary-foreground font-medium flex-shrink-0">
             {(session.user.name?.[0] || "U").toUpperCase()}
           </div>
         )}
         {isExpanded && (
           <div className="flex items-center gap-2 flex-1 min-w-0">
-            <span className="text-sm font-medium truncate">
+            <span className="text-sm font-medium truncate flex-1">
               {session.user.name || session.user.email || "User"}
             </span>
-            <LogOut className="w-3 h-3 text-muted-foreground ml-auto flex-shrink-0" />
+            <LogOut className="w-3 h-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
           </div>
         )}
       </button>
@@ -188,13 +290,15 @@ function UserSection({ isExpanded }: { isExpanded: boolean }) {
           ? signIn("mock", { username: "dev-user", callbackUrl: "/" })
           : signIn("github")
       }
-      className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-accent transition-colors w-full text-left text-muted-foreground hover:text-foreground"
+      className={cn(
+        "flex items-center gap-2.5 rounded-lg hover:bg-accent active:scale-[0.98] transition-all w-full text-left text-muted-foreground hover:text-foreground",
+        isExpanded ? "px-3 py-2" : "p-2 justify-center",
+      )}
+      title={isExpanded ? undefined : isMockLogin ? "本地测试登录" : "GitHub 登录"}
     >
-      <User className="w-4 h-4" />
+      <User className="w-4 h-4 flex-shrink-0" />
       {isExpanded && (
-        <span className="text-sm">
-          {isMockLogin ? "本地测试登录" : "GitHub 登录"}
-        </span>
+        <span className="text-sm">{isMockLogin ? "本地测试登录" : "GitHub 登录"}</span>
       )}
     </button>
   );

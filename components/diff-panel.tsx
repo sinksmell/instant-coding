@@ -417,9 +417,9 @@ function IconButton({
       onClick={onClick}
       disabled={disabled}
       className={cn(
-        "flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed",
+        "flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all active:scale-[0.97] disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100",
         primary
-          ? "bg-primary text-primary-foreground hover:bg-primary/90"
+          ? "bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm"
           : "bg-muted hover:bg-accent",
         full && "flex-1",
       )}

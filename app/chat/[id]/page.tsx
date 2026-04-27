@@ -94,7 +94,7 @@ export default function ChatPage() {
             )}
             <button
               onClick={() => setShowRight((v) => !v)}
-              className="p-2 rounded-lg border border-border hover:bg-accent transition-colors"
+              className="p-2 rounded-lg border border-border hover:bg-accent active:scale-95 transition-all"
               title={showRight ? "隐藏右侧面板" : "显示右侧面板"}
             >
               {showRight ? (
@@ -128,10 +128,11 @@ export default function ChatPage() {
             />
           </div>
           {showRight && (
-            <div className="w-[560px] overflow-hidden">
+            <div className="w-[560px] overflow-hidden bg-card">
               {/*
-                Both panels are kept mounted so switching tabs preserves their
-                state (WS connections, terminal scroll, diff selection).
+                All panels stay mounted (display:none when inactive) so tab
+                switching preserves WS connections, terminal scrollback, Monaco
+                buffers, and diff selection.
               */}
               <div className={cn("h-full", rightTab !== "diff" && "hidden")}>
                 <DiffPanel taskId={task.id} baseBranch={task.branch || "main"} />
@@ -165,8 +166,10 @@ function TabBtn({
     <button
       onClick={onClick}
       className={cn(
-        "flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-colors",
-        active ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+        "flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-all active:scale-[0.97]",
+        active
+          ? "bg-card text-foreground shadow-sm ring-1 ring-border/60"
+          : "text-muted-foreground hover:text-foreground hover:bg-background/60",
       )}
     >
       <Icon className="w-3.5 h-3.5" />
