@@ -39,7 +39,7 @@ Instant Coding 是 B-S 三段式架构：浏览器 ⟷ Next.js BFF ⟷ Codespace
    - `/agent` WS：`spawn('claude', [...])` 进程桥，stdin ⟷ WS 输入，stream-json stdout ⟷ WS 事件
    - `/shell` WS：`node-pty` spawn 用户 `$SHELL`，随连接生命周期，client ⟷ pty stdio；支持 `{type:"resize"}` SIGWINCH
    - `/git/*` REST：`status`/`diff`/`file`/`worktree`/`commit`/`push`（M7，见 §5.5）
-   - `/fs` REST：M9
+   - `/fs` REST：`tree` / `read` / `write`（见 §5.7）
    - Session 持久化**完全依赖** `~/.claude/projects/*.jsonl`（Claude Code 自维护），**不建消息表**
 
 ## 二、为什么这个架构
@@ -283,6 +283,20 @@ BFF 是**透明代理**，浏览器 ⟷ BFF 与 BFF ⟷ runtime 走同一套 sch
 PR 创建不经 runtime，由 BFF 自己用 octokit 开：`POST /api/agent/pr/<taskId>` body `{ title, body?, head, base? }` → 调 `createPullRequest()` → 回写 `task.pr_url` → 返回 `{ url, number, state }`。
 
 路径校验：所有 `path` 入参拒绝绝对路径、拒绝 `..`；`/git/worktree` 额外用 `path.resolve` 防逃逸。`ref` 白名单 `[\w./-]+`。
+
+### 5.7 Filesystem REST（/fs，M9 起）
+
+以 `/fs/` 为根，JWT 保护，BFF 代理同 `/git` 模式（`app/api/agent/fs/[taskId]/[...path]`）。
+
+| 方法 | 路径 | 入参 | 返回 |
+|---|---|---|---|
+| GET | `/fs/tree?path=&depth=` | `path` 可选（默认 cwd），`depth` 默认 20 / 上限 40 | 嵌套 `{name,path,type,size?,children?,truncated?}`；dirs 在前、按字母序 |
+| GET | `/fs/read?path=` | — | `{exists, content, size, mtime, binary}`；NUL 字节启发式判 binary；最大 2MB |
+| POST | `/fs/write` | `{path, content}` | `{ok:true, size, mtime}`；自动 `mkdir -p` 父目录；最大 2MB |
+
+内置忽略目录：`node_modules`, `.git`, `.next`, `.turbo`, `dist`, `build`, `out`, `.cache`, `.venv`, `__pycache__`, `.pytest_cache`, `target`, `.gradle`, `.idea`, `.vscode`（写入不受此限制）。单目录最多返回 500 条目以防爆表。
+
+共享守卫 `src/safe-path.js`：`isSafeRelative`（非绝对路径、非 `..`）+ `resolveInside`（`path.resolve` + `path.relative` 二次校验）。同时被 `/git/worktree` / `/git/file` 使用。
 
 ### 5.6 Shell WS（/shell，M8 起）
 

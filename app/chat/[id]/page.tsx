@@ -9,6 +9,7 @@ import {
   Loader2,
   FileDiff,
   Terminal as TerminalIcon,
+  Files as FilesIcon,
   PanelRightClose,
   PanelRightOpen,
 } from "lucide-react"
@@ -16,10 +17,11 @@ import { Sidebar } from "@/components/sidebar"
 import { AgentChat } from "@/components/agent-chat"
 import { DiffPanel } from "@/components/diff-panel"
 import { TerminalPanel } from "@/components/terminal-panel"
+import { FilesPanel } from "@/components/files-panel"
 import { useTask } from "@/lib/tasks"
 import { cn } from "@/lib/utils"
 
-type RightTab = "diff" | "shell"
+type RightTab = "diff" | "shell" | "files"
 
 export default function ChatPage() {
   const params = useParams<{ id: string }>()
@@ -82,6 +84,9 @@ export default function ChatPage() {
                 <TabBtn active={rightTab === "diff"} onClick={() => setRightTab("diff")} icon={FileDiff}>
                   Diff
                 </TabBtn>
+                <TabBtn active={rightTab === "files"} onClick={() => setRightTab("files")} icon={FilesIcon}>
+                  Files
+                </TabBtn>
                 <TabBtn active={rightTab === "shell"} onClick={() => setRightTab("shell")} icon={TerminalIcon}>
                   Shell
                 </TabBtn>
@@ -130,6 +135,9 @@ export default function ChatPage() {
               */}
               <div className={cn("h-full", rightTab !== "diff" && "hidden")}>
                 <DiffPanel taskId={task.id} baseBranch={task.branch || "main"} />
+              </div>
+              <div className={cn("h-full", rightTab !== "files" && "hidden")}>
+                <FilesPanel taskId={task.id} />
               </div>
               <div className={cn("h-full", rightTab !== "shell" && "hidden")}>
                 <TerminalPanel taskId={task.id} claudeSessionId={chatSessionId} />

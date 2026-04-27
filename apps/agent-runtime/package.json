@@ -23,7 +23,8 @@
     "dev": "node --watch bin/agent-runtime.js",
     "smoke": "node scripts/smoke.js",
     "smoke:git": "node scripts/smoke-git.js",
-    "smoke:shell": "node scripts/smoke-shell.js"
+    "smoke:shell": "node scripts/smoke-shell.js",
+    "smoke:fs": "node scripts/smoke-fs.js"
   },
   "dependencies": {
     "express": "^4.19.2",

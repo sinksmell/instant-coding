@@ -44,6 +44,9 @@ npm run smoke:git
 
 # /shell WS — offline; spawns a pty, echoes a marker, exits
 npm run smoke:shell
+
+# /fs REST — offline; tree + read + write + binary detect + sandbox
+npm run smoke:fs
 ```
 
 ## WS protocol

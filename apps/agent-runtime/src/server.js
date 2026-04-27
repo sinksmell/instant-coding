@@ -6,6 +6,7 @@ import { expressAuthMiddleware, authEnabled } from "./auth.js";
 import { handleAgentConnection } from "./agent-ws.js";
 import { handleShellConnection } from "./shell-ws.js";
 import { mountGitRoutes } from "./git-routes.js";
+import { mountFsRoutes } from "./fs-routes.js";
 
 const PKG_VERSION = "0.1.0";
 
@@ -40,10 +41,9 @@ export async function startServer({ port = 3030, host = "127.0.0.1", cwd = proce
   app.use("/git", expressAuthMiddleware);
   mountGitRoutes(app, { cwd });
 
-  // Reserved for M9: /fs
-  app.use("/fs", expressAuthMiddleware, (_req, res) =>
-    res.status(501).json({ error: "not_implemented", milestone: "M9" })
-  );
+  // M9: filesystem operations (JWT-guarded)
+  app.use("/fs", expressAuthMiddleware);
+  mountFsRoutes(app, { cwd });
 
   const server = http.createServer(app);
 
