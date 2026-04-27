@@ -23,6 +23,7 @@
 - ✅ **M3.5**：Codespaces 集成（列出 / 创建 / 任务绑定）
 - 🟡 **M4**：Agent Runtime PoC（`apps/agent-runtime/`）—— 核心完成：`/health` + `/agent` WS + stream-json 桥 + session 持久化验证（smoke 通过）。未完：permission bridging 作为 tech debt（headless claude 不提供）
 - 🟡 **M5**：BFF WebSocket 代理 + Codespace 生命周期 —— 代码完成：自定义 `server.ts` / `lib/agent/{jwt,lifecycle,proxy,upgrade-handler}.ts` / `.devcontainer/devcontainer.json` 模板 + 示例环境变量。BFF 层 unit smoke 通过（未鉴权 401 / 缺参 400 / 常规页 200）。待用户真 Codespace + Supabase 环境做 E2E 验证
+- 🟡 **M6**：真 Chat 页 —— `components/agent-chat.tsx` 完整消费 WS 协议（session_created / message / tool_call 折叠 / tool_result / thinking / permission_denied / token_usage / complete / session_ended / error），带状态栏（连接态 + 累计 tokens + cache hit + 每轮成本）、中断按钮、多轮复用 sessionId、initialPrompt 首访自动发送并用 localStorage 去重。删除旧 `lib/agent/executor.ts` 和未接线的 `chat-panel.tsx` / `code-editor.tsx`。`app/api/tasks/route.ts` 不再触发 executor，改由浏览器开 WS 驱动执行。待真 Codespace + Supabase E2E 验证
 
 ## 四、未来里程碑
 
