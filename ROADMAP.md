@@ -21,7 +21,8 @@
 - ✅ **M2**：任务创建流 + ANTHROPIC_API_KEY 加密存储（AES-256-GCM）
 - ⚠️ **M3**：Agent Executor（`lib/agent/executor.ts`，一次性 JSON 生成模式）—— **将在 M4 上线后彻底替换**，暂保留为 fallback 对比用
 - ✅ **M3.5**：Codespaces 集成（列出 / 创建 / 任务绑定）
-- 🟡 **M4**：Agent Runtime PoC（`apps/agent-runtime/`）—— 核心完成：`/health` + `/agent` WS + stream-json 桥 + session 持久化验证（smoke 通过）。未完：`.devcontainer/devcontainer.json` 模板与 permission bridging，前者合并到 M5，后者作为 tech debt
+- 🟡 **M4**：Agent Runtime PoC（`apps/agent-runtime/`）—— 核心完成：`/health` + `/agent` WS + stream-json 桥 + session 持久化验证（smoke 通过）。未完：permission bridging 作为 tech debt（headless claude 不提供）
+- 🟡 **M5**：BFF WebSocket 代理 + Codespace 生命周期 —— 代码完成：自定义 `server.ts` / `lib/agent/{jwt,lifecycle,proxy,upgrade-handler}.ts` / `.devcontainer/devcontainer.json` 模板 + 示例环境变量。BFF 层 unit smoke 通过（未鉴权 401 / 缺参 400 / 常规页 200）。待用户真 Codespace + Supabase 环境做 E2E 验证
 
 ## 四、未来里程碑
 

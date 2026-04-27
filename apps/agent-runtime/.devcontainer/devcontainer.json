@@ -1,0 +1,20 @@
+{
+  "name": "Instant Coding",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:20",
+  "features": {
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+  "forwardPorts": [3030],
+  "portsAttributes": {
+    "3030": {
+      "label": "agent-runtime",
+      "visibility": "private",
+      "onAutoForward": "silent"
+    }
+  },
+  "postCreateCommand": "npm i -g @anthropic-ai/claude-code && echo 'claude CLI installed'",
+  "postStartCommand": "nohup node ${containerWorkspaceFolder}/.claude-runtime/bin/agent-runtime.js --port 3030 --host 127.0.0.1 --cwd ${containerWorkspaceFolder} > /tmp/agent-runtime.log 2>&1 &",
+  "remoteEnv": {
+    "AGENT_RUNTIME_JWT_SECRET": "${localEnv:AGENT_RUNTIME_JWT_SECRET}"
+  }
+}
