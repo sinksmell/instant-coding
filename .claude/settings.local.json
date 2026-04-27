@@ -5,5 +5,9 @@
       "WebFetch(domain:github.com)",
       "WebSearch"
     ]
-  }
+  },
+  "enabledMcpjsonServers": [
+    "supabase"
+  ],
+  "enableAllProjectMcpServers": true
 }
