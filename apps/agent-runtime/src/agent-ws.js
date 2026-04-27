@@ -2,10 +2,19 @@ import { ClaudeSession } from "./claude-proc.js";
 import { verifyWsUpgrade } from "./auth.js";
 
 /**
- * Mount /agent WebSocket handler on a `ws` Server.
- * Wires Browser/BFF WS messages <-> a single claude CLI child process per connection.
+ * Wire one WS connection to a dedicated claude child process.
  *
- * WS protocol: see ARCHITECTURE §5.3.
+ * Lifecycle:
+ *   - First `prompt` spawns the child. `permissionMode` / `allowedTools` /
+ *     `disallowedTools` are fixed at spawn time and cannot be changed mid-session.
+ *   - Subsequent `prompt`s pipe into stdin of the same process (multi-turn).
+ *   - `abort` sends SIGINT (5s grace → SIGTERM).
+ *   - WS close tears the session down.
+ *
+ * Note: `claude -p` in headless mode does NOT emit interactive `permission_request`
+ * events. Tool gating is configured up-front via the fields above; blocked calls
+ * surface as `tool_result` with `is_error: true` and a final `permission_denied`
+ * summary event.
  */
 export function handleAgentConnection(ws, req, { cwd }) {
   const auth = verifyWsUpgrade(req);
@@ -29,6 +38,8 @@ export function handleAgentConnection(ws, req, { cwd }) {
 
   /** @type {ClaudeSession | null} */
   let session = null;
+  let turnCompletedAtLeastOnce = false;
+  let emittedSessionId = null;
 
   function send(evt) {
     if (ws.readyState === ws.OPEN) {
@@ -36,25 +47,45 @@ export function handleAgentConnection(ws, req, { cwd }) {
     }
   }
 
-  function ensureSession(firstPrompt, resumeId) {
-    if (session) return session;
+  function spawnSession(firstPrompt, promptMsg) {
     session = new ClaudeSession({
       cwd,
-      sessionId: resumeId,
+      sessionId: promptMsg.sessionId,
       env: extraEnv,
+      permissionMode: promptMsg.permissionMode,
+      allowedTools: promptMsg.allowedTools,
+      disallowedTools: promptMsg.disallowedTools,
       onEvent: (evt) => {
+        // claude emits `system/init` on every turn; collapse to a single
+        // `session_created` per WS connection (sessionId is stable across turns).
+        if (evt.type === "session_created") {
+          if (emittedSessionId === evt.sessionId) return;
+          emittedSessionId = evt.sessionId;
+        }
+        if (evt.type === "complete") turnCompletedAtLeastOnce = true;
         send(evt);
       },
       onError: (err) => {
-        send({ type: "error", code: "runtime_unreachable", message: err.message });
+        send({ type: "error", code: err.code, message: err.message });
       },
-      onExit: (code) => {
-        send({ type: "complete", exitCode: code ?? 0 });
+      onExit: (code, signal) => {
+        // Distinguish clean session end from a mid-turn crash.
+        if (code === 0 || (code === null && signal === "SIGTERM" && turnCompletedAtLeastOnce)) {
+          send({ type: "session_ended", reason: signal === "SIGTERM" ? "aborted" : "normal" });
+        } else if (signal === "SIGINT") {
+          send({ type: "session_ended", reason: "user_abort" });
+        } else {
+          send({
+            type: "error",
+            code: "claude_process_crashed",
+            message: `claude exited with code=${code} signal=${signal}`,
+          });
+        }
         session = null;
+        if (ws.readyState === ws.OPEN) ws.close(1000, "session_ended");
       },
     });
     session.start(firstPrompt);
-    return session;
   }
 
   ws.on("message", (data) => {
@@ -72,8 +103,9 @@ export function handleAgentConnection(ws, req, { cwd }) {
         return;
       }
       if (!session) {
-        ensureSession(msg.content, msg.sessionId);
+        spawnSession(msg.content, msg);
       } else {
+        // permissionMode / allowedTools ignored after spawn; respawn required to change.
         session.sendPrompt(msg.content);
       }
       return;
@@ -84,12 +116,16 @@ export function handleAgentConnection(ws, req, { cwd }) {
       return;
     }
 
+    // `permission_decision` is intentionally unsupported: headless claude has no
+    // interactive permission round-trip. Configure tool gating via the `prompt`
+    // fields `permissionMode` / `allowedTools` / `disallowedTools` at session start.
     if (msg.type === "permission_decision") {
-      // Claude's headless mode does not surface interactive permission prompts; for
-      // now we acknowledge and ignore. Once --permission-mode=dontAsk + hook-based
-      // permission bridging is wired, this handler will forward the decision back
-      // into the child via a permission response stream-json message.
-      send({ type: "system", subtype: "permission_ack", raw: msg });
+      send({
+        type: "error",
+        code: "not_supported",
+        message:
+          "permission_decision is not supported in headless mode; pass permissionMode / allowedTools / disallowedTools on the first prompt instead",
+      });
       return;
     }
 

@@ -217,22 +217,26 @@ BFF 是**透明代理**，浏览器 ⟷ BFF 与 BFF ⟷ runtime 走同一套 sch
 
 | type | 字段 | 说明 |
 |---|---|---|
-| `prompt` | `content: string`, `sessionId?: string`, `images?: string[]` | 提交用户输入。首次无 `sessionId`，后续带 runtime 返回的 `sessionId`。`images` 是 base64 data URL，runtime 保存临时文件并把路径注入 prompt |
-| `abort` | — | 中断当前 `claude` 进程（发 SIGINT） |
-| `permission_decision` | `requestId: string`, `allow: boolean`, `remember?: boolean` | 用户对 `permission_request` 的应答；`remember` 会让 runtime 把该工具加到当前 session 的 allowed list |
+| `prompt` | `content: string`, `sessionId?: string`, `images?: string[]`, `permissionMode?: "default"\|"acceptEdits"\|"bypassPermissions"\|"plan"\|"dontAsk"\|"auto"`, `allowedTools?: string[]`, `disallowedTools?: string[]` | 提交用户输入。首次无 `sessionId`，后续带 runtime 返回的 `sessionId`。`images` 是 base64 data URL。**`permissionMode` / `allowedTools` / `disallowedTools` 只在首条 prompt（spawn 时）生效**，后续 prompt 忽略；要变更需重开 WS 连接。|
+| `abort` | — | 中断当前 `claude` 进程（SIGINT，5s 后 SIGTERM 兜底） |
+
+> **headless 模式不支持交互式权限往返**。claude `-p` 不发 `permission_request`；被策略拒的工具直接以 `tool_result` + `is_error:true` 返回，并在 `result.permission_denials[]` 汇总。工具白/黑名单在会话启动时用 `permissionMode` / `allowedTools` / `disallowedTools` 预设。
 
 #### 5.3.2 server → client
 
 | type | 字段 | 说明 |
 |---|---|---|
-| `session_created` | `sessionId: string` | Claude 分配的新 session ID，首条 prompt 后抵达 |
-| `message` | `role: "assistant"`, `content: string`, `isDelta: boolean` | 助手文本；`isDelta=true` 表示增量流 |
-| `tool_call` | `id: string`, `name: string`, `input: object` | Claude 决定调用工具 |
-| `tool_result` | `id: string`, `output: string`, `isError: boolean` | 工具执行结果（runtime 转发 claude stdout 对应段） |
-| `permission_request` | `requestId: string`, `toolName: string`, `input: object` | Claude 请求用户批准某工具；UI 必须响应 `permission_decision` 才继续 |
-| `token_usage` | `input: number`, `output: number`, `cacheRead: number`, `cacheWrite: number` | 每轮 token 统计 |
-| `complete` | `exitCode: number` | 当前 turn 结束 |
+| `session_created` | `sessionId: string` | Claude 分配的 session ID，每个 WS 连接只发 1 次（runtime 去重 claude 的每-turn `system/init`） |
+| `message` | `role: "assistant"`, `content: string`, `isDelta: boolean`, `parentToolUseId?: string` | 助手文本；`parentToolUseId` 表示隶属于某个 subagent（Task 工具）的调用树 |
+| `thinking` | `content: string`, `signature?: string`, `parentToolUseId?: string` | extended thinking 内容块 |
+| `tool_call` | `id: string`, `name: string`, `input: object`, `parentToolUseId?: string` | Claude 调用工具 |
+| `tool_result` | `id: string`, `output: string`, `isError: boolean`, `parentToolUseId?: string` | 工具执行结果（runtime 转发 claude stdout 对应段） |
+| `permission_denied` | `denials: Array<{toolName, toolUseId, input}>` | 当前 turn 内被 permission-mode 阻塞的工具汇总（从 `result.permission_denials` 归一化） |
+| `token_usage` | `input: number`, `output: number`, `cacheRead: number`, `cacheWrite: number` | turn 级累计 token 统计（取自 `result.usage`；不再从 `assistant.usage` 重复发） |
+| `complete` | `exitCode: number`, `turnStats: {durationMs, durationApiMs, numTurns, totalCostUsd}` | 当前 turn 结束；进程保持运行，可继续发 `prompt` 开始新 turn |
+| `session_ended` | `reason: "normal"\|"user_abort"\|"aborted"` | claude 进程退出，WS 即将关闭 |
 | `error` | `code: string`, `message: string` | 见 5.4 错误码表 |
+| `system` | `subtype: string`, `raw: object` | 透传 claude 的 `system/*` 事件（hook 生命周期、stderr、parse_error 等）用于诊断 |
 
 示例（`session_created`）：
 ```json
@@ -252,10 +256,13 @@ BFF 是**透明代理**，浏览器 ⟷ BFF 与 BFF ⟷ runtime 走同一套 sch
 | code | 发生位置 | 用户可见话术建议 |
 |---|---|---|
 | `codespace_boot_failed` | BFF | "环境启动失败，请重试或检查 Codespace 配额" |
-| `runtime_unreachable` | BFF | "Codespace 里的 Agent 服务未就绪" |
+| `runtime_unreachable` | BFF / runtime | "Codespace 里的 Agent 服务未就绪" |
+| `claude_not_installed` | runtime | "Codespace 里未安装 Claude Code CLI，请检查 devcontainer" |
+| `claude_process_crashed` | runtime | "Claude 进程意外退出"；带 `exitCode` / `signal` |
 | `claude_api_error` | runtime | "Claude API 出错（速率限制、密钥失效等）"；带原始 message |
 | `tool_exec_error` | runtime | "工具执行失败" |
-| `user_abort` | runtime | "已中断" |
+| `not_supported` | runtime | "当前模式不支持该操作"（如 headless 下发 `permission_decision`） |
+| `bad_request` | runtime | "协议错误"；开发期诊断用 |
 | `auth_failed` | BFF / runtime | "鉴权失败" |
 | `rate_limited` | BFF | "请求过于频繁" |
 
