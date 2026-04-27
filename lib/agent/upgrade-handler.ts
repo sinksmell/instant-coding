@@ -104,7 +104,7 @@ export async function handleAgentUpgrade(
       if (apiKey) headers["X-Anthropic-Api-Key"] = apiKey
       if (user.anthropic_base_url) headers["X-Anthropic-Base-Url"] = user.anthropic_base_url
 
-      proxyWebSocket(ws, endpoint.url, headers)
+      proxyWebSocket(ws, endpoint.wsUrl, headers)
     })
   } catch (err) {
     console.error("[agent-upgrade] fatal:", err)

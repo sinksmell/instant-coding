@@ -4,6 +4,7 @@ import express from "express";
 import { WebSocketServer } from "ws";
 import { expressAuthMiddleware, authEnabled } from "./auth.js";
 import { handleAgentConnection } from "./agent-ws.js";
+import { mountGitRoutes } from "./git-routes.js";
 
 const PKG_VERSION = "0.1.0";
 
@@ -22,6 +23,7 @@ function getClaudeVersion() {
 
 export async function startServer({ port = 3030, host = "127.0.0.1", cwd = process.cwd() } = {}) {
   const app = express();
+  app.use(express.json({ limit: "1mb" }));
 
   app.get("/health", (_req, res) => {
     res.json({
@@ -33,10 +35,11 @@ export async function startServer({ port = 3030, host = "127.0.0.1", cwd = proce
     });
   });
 
-  // Reserved for later milestones (M7: /git, M9: /fs)
-  app.use("/git", expressAuthMiddleware, (_req, res) =>
-    res.status(501).json({ error: "not_implemented", milestone: "M7" })
-  );
+  // M7: git operations (JWT-guarded)
+  app.use("/git", expressAuthMiddleware);
+  mountGitRoutes(app, { cwd });
+
+  // Reserved for M9: /fs
   app.use("/fs", expressAuthMiddleware, (_req, res) =>
     res.status(501).json({ error: "not_implemented", milestone: "M9" })
   );

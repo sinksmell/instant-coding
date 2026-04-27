@@ -21,7 +21,8 @@
   "scripts": {
     "start": "node bin/agent-runtime.js",
     "dev": "node --watch bin/agent-runtime.js",
-    "smoke": "node scripts/smoke.js"
+    "smoke": "node scripts/smoke.js",
+    "smoke:git": "node scripts/smoke-git.js"
   },
   "dependencies": {
     "express": "^4.19.2",

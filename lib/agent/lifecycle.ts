@@ -21,10 +21,14 @@ export class LifecycleError extends Error {
 }
 
 export interface RuntimeEndpoint {
-  /** wss URL that speaks the agent-runtime protocol (see ARCHITECTURE §5.3) */
-  url: string
-  /** Extra headers BFF should send on the upstream WS handshake */
+  /** wss URL that speaks the agent-runtime /agent protocol (ARCHITECTURE §5.3) */
+  wsUrl: string
+  /** https base URL for REST endpoints (/git, /fs, /health) — no trailing slash */
+  httpUrl: string
+  /** Extra headers BFF should send on the upstream connection */
   headers: Record<string, string>
+  /** Convenience alias for wsUrl, kept for backward compatibility */
+  url: string
 }
 
 /**
@@ -46,7 +50,12 @@ export async function ensureRunning(opts: {
 }): Promise<RuntimeEndpoint> {
   const devUrl = process.env.AGENT_RUNTIME_DEV_URL
   if (devUrl) {
-    return { url: devUrl, headers: {} }
+    return {
+      wsUrl: devUrl,
+      url: devUrl,
+      httpUrl: devUrlToHttp(devUrl),
+      headers: {},
+    }
   }
 
   if (!opts.codespaceId) {
@@ -79,13 +88,27 @@ export async function ensureRunning(opts: {
   )
 
   const host = `${cs.codespace_name}-${AGENT_RUNTIME_PORT}.app.github.dev`
+  const wsUrl = `wss://${host}/agent`
   return {
-    url: `wss://${host}/agent`,
+    wsUrl,
+    url: wsUrl,
+    httpUrl: `https://${host}`,
     headers: {
       // GitHub private port forwarding: authenticate the BFF's connection
       // to the Codespace's forwarded port using the user's OAuth token.
       "X-Github-Token": opts.accessToken,
     },
+  }
+}
+
+function devUrlToHttp(wsUrl: string): string {
+  // ws://host/agent → http://host ; wss://host/agent → https://host
+  try {
+    const u = new URL(wsUrl)
+    const scheme = u.protocol === "wss:" ? "https:" : "http:"
+    return `${scheme}//${u.host}`
+  } catch {
+    return wsUrl
   }
 }
 

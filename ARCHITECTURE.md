@@ -37,8 +37,9 @@ Instant Coding 是 B-S 三段式架构：浏览器 ⟷ Next.js BFF ⟷ Codespace
    - Supabase 元数据管理（任务 / 会话外键 / token 用量）
 3. **Codespace agent-runtime**（薄桥接，独立 repo `@instant-coding/agent-runtime`）：核心只做协议转换。
    - `/agent` WS：`spawn('claude', [...])` 进程桥，stdin ⟷ WS 输入，stream-json stdout ⟷ WS 事件
-   - `/shell` WS：`node-pty` spawn bash（用户可在里面手动 `claude --resume <id>` 接管，与 `/agent` 共享 `~/.claude`）
-   - `/fs`, `/git` REST：文件 CRUD、git 操作
+   - `/shell` WS：`node-pty` spawn bash（M8）
+   - `/git/*` REST：`status`/`diff`/`file`/`worktree`/`commit`/`push`（M7，见 §5.5）
+   - `/fs` REST：M9
    - Session 持久化**完全依赖** `~/.claude/projects/*.jsonl`（Claude Code 自维护），**不建消息表**
 
 ## 二、为什么这个架构
@@ -265,6 +266,23 @@ BFF 是**透明代理**，浏览器 ⟷ BFF 与 BFF ⟷ runtime 走同一套 sch
 | `bad_request` | runtime | "协议错误"；开发期诊断用 |
 | `auth_failed` | BFF / runtime | "鉴权失败" |
 | `rate_limited` | BFF | "请求过于频繁" |
+
+### 5.5 REST 端点（/git，M7 起）
+
+以 `/git/` 为根，挂在 agent-runtime 上（JWT 保护）。BFF 以 `/api/agent/git/<taskId>/<...path>` 透明代理（`lib/agent/http-proxy.ts` + `app/api/agent/git/[taskId]/[...path]/route.ts`）。
+
+| 方法 | 路径 | 入参 | 返回 |
+|---|---|---|---|
+| GET | `/git/status` | — | `{ branch, ahead, behind, files: [{path, index, worktree}] }`（porcelain v2） |
+| GET | `/git/diff?path=&staged=` | `path` 可选、`staged` 默认 `false` | `{ diff, stat }` 纯文本 |
+| GET | `/git/file?path=&ref=` | `ref` 默认 `HEAD` | `{ content, exists }`（ref 处的文件内容） |
+| GET | `/git/worktree?path=` | — | `{ content, exists }`（磁盘上的工作区内容，含 untracked） |
+| POST | `/git/commit` | `{ message, paths? }` | `{ sha, branch }`；无变更 → 409 `nothing_to_commit` |
+| POST | `/git/push` | `{ branch?, setUpstream? }` | `{ branch, remote, sha, output }`；鉴权失败 → 500 `auth_failed` |
+
+PR 创建不经 runtime，由 BFF 自己用 octokit 开：`POST /api/agent/pr/<taskId>` body `{ title, body?, head, base? }` → 调 `createPullRequest()` → 回写 `task.pr_url` → 返回 `{ url, number, state }`。
+
+路径校验：所有 `path` 入参拒绝绝对路径、拒绝 `..`；`/git/worktree` 额外用 `path.resolve` 防逃逸。`ref` 白名单 `[\w./-]+`。
 
 ## 六、鉴权与密钥流转
 
