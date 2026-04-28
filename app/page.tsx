@@ -7,14 +7,15 @@ import { QuickActions } from "@/components/quick-actions";
 import {
   ChevronDown,
   GitBranch,
-  ArrowRight,
   Monitor,
   Loader2,
   Server,
   Plus,
+  Zap,
 } from "lucide-react";
 import { useSession, signIn } from "next-auth/react";
 import Link from "next/link";
+import { cn } from "@/lib/utils";
 
 interface Repo {
   name: string;
@@ -263,9 +264,16 @@ export default function Home() {
         <main className="flex-1 flex flex-col items-center justify-center px-4 pb-12">
           {/* Title */}
           <div className="text-center mb-8">
-            <h1 className="text-4xl font-bold tracking-tight mb-3">Instant Coding</h1>
+            <div className="flex items-center justify-center gap-2.5 mb-3">
+              <span className="inline-flex items-center justify-center w-10 h-10 rounded-xl bg-primary/10 text-primary shadow-sm">
+                <Zap className="w-5 h-5" fill="currentColor" />
+              </span>
+              <h1 className="text-4xl font-bold tracking-tight">
+                灵感来了，<span className="text-primary">立刻编码</span>
+              </h1>
+            </div>
             <p className="text-muted-foreground text-base">
-              帮助您编写代码并将其无缝导出到 GitHub。
+              把你的想法说出来，Claude 在 Codespace 里写代码、跑测试、开 PR。
             </p>
           </div>
 
@@ -361,7 +369,7 @@ export default function Home() {
                 <textarea
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  placeholder="在这里编写你的创意代码。"
+                  placeholder="脑子里冒出什么想法？写给 Claude，它立刻动手。"
                   className="w-full p-4 bg-transparent text-sm outline-none resize-none min-h-[140px] placeholder:text-muted-foreground leading-relaxed"
                   rows={4}
                 />
@@ -456,10 +464,29 @@ export default function Home() {
                   <button
                     disabled={!input.trim() || submitting}
                     onClick={handleSubmit}
-                    className="flex items-center gap-2 px-5 py-2 bg-muted text-muted-foreground rounded-lg hover:bg-primary hover:text-primary-foreground hover:shadow-sm active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100 transition-all text-sm font-medium"
+                    className={cn(
+                      "group flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-medium transition-all",
+                      "bg-muted text-muted-foreground",
+                      "enabled:hover:bg-primary enabled:hover:text-primary-foreground enabled:hover:shadow-md enabled:hover:shadow-primary/20",
+                      "enabled:active:scale-95",
+                      "disabled:opacity-40 disabled:cursor-not-allowed",
+                      input.trim() && !submitting && "bg-primary text-primary-foreground shadow-sm shadow-primary/20",
+                    )}
                   >
-                    <span>{submitting ? "创建中..." : "编码"}</span>
-                    <ArrowRight className="w-4 h-4" />
+                    {submitting ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>启动编码环境…</span>
+                      </>
+                    ) : (
+                      <>
+                        <Zap
+                          className="w-4 h-4 transition-transform group-enabled:group-hover:-rotate-12"
+                          fill="currentColor"
+                        />
+                        <span>立刻编码</span>
+                      </>
+                    )}
                   </button>
                 </div>
               </div>
@@ -467,7 +494,7 @@ export default function Home() {
 
             {/* Quick Actions */}
             <div className="mt-6">
-              <QuickActions />
+              <QuickActions onSelect={setInput} />
             </div>
           </div>
         </main>

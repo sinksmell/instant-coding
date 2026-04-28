@@ -320,7 +320,7 @@ export function AgentChat({ taskId, initialPrompt, onSessionIdChange }: AgentCha
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
         {items.length === 0 && state === "ready" && (
           <div className="text-sm text-muted-foreground text-center py-12">
-            会话已就绪，输入内容开始对话
+            环境已就绪。说你想写点什么，Claude 立刻动手。
           </div>
         )}
         {items.map((item, i) => (

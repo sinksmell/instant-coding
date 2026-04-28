@@ -3,8 +3,8 @@ import "./globals.css";
 import { SessionProvider } from "next-auth/react";
 
 export const metadata: Metadata = {
-  title: "Instant Coding - AI Powered Development",
-  description: "基于 Vercel 的网页版智能编程工具",
+  title: "Instant Coding · 灵感来了，立刻编码",
+  description: "把灵感说出来，Claude 在云端 Codespace 里把它写成代码。",
 };
 
 export default function RootLayout({
