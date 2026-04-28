@@ -7,6 +7,7 @@ import { handleAgentConnection } from "./agent-ws.js";
 import { handleShellConnection } from "./shell-ws.js";
 import { mountGitRoutes } from "./git-routes.js";
 import { mountFsRoutes } from "./fs-routes.js";
+import { mountHistoryRoutes } from "./history-routes.js";
 
 const PKG_VERSION = "0.1.0";
 
@@ -44,6 +45,10 @@ export async function startServer({ port = 3030, host = "127.0.0.1", cwd = proce
   // M9: filesystem operations (JWT-guarded)
   app.use("/fs", expressAuthMiddleware);
   mountFsRoutes(app, { cwd });
+
+  // SDK era: replay ~/.claude/projects/<cwd>/<sid>.jsonl history
+  app.use("/agent/history", expressAuthMiddleware);
+  mountHistoryRoutes(app, { cwd });
 
   const server = http.createServer(app);
 

@@ -23,7 +23,15 @@ import { cn } from "@/lib/utils"
 
 type ServerEvent =
   | { type: "session_created"; sessionId: string }
-  | { type: "message"; role: "assistant"; content: string; isDelta: boolean; parentToolUseId?: string }
+  | {
+      type: "message"
+      role: "assistant" | "user"
+      content: string
+      isDelta: boolean
+      blockIndex?: number
+      parentToolUseId?: string
+    }
+  | { type: "block_stop"; blockIndex?: number }
   | { type: "thinking"; content: string; signature?: string; parentToolUseId?: string }
   | { type: "tool_call"; id: string; name: string; input: Record<string, unknown>; parentToolUseId?: string }
   | {
@@ -32,6 +40,12 @@ type ServerEvent =
       output: string
       isError: boolean
       parentToolUseId?: string
+    }
+  | {
+      type: "permission_request"
+      requestId: string
+      toolName: string
+      input: Record<string, unknown>
     }
   | {
       type: "permission_denied"
@@ -62,7 +76,14 @@ type ServerEvent =
 
 type ChatItem =
   | { kind: "user"; content: string; ts: number }
-  | { kind: "assistant"; content: string; ts: number; parentToolUseId?: string }
+  | {
+      kind: "assistant"
+      content: string
+      ts: number
+      parentToolUseId?: string
+      /** While streaming, points at the SDK block index so deltas can find us */
+      streamingBlockIndex?: number
+    }
   | { kind: "thinking"; content: string; ts: number }
   | {
       kind: "tool"
@@ -72,6 +93,14 @@ type ChatItem =
       result?: { output: string; isError: boolean }
       ts: number
       parentToolUseId?: string
+    }
+  | {
+      kind: "permission_request"
+      requestId: string
+      toolName: string
+      input: Record<string, unknown>
+      decision?: "allow" | "deny"
+      ts: number
     }
   | {
       kind: "permission_denied"
@@ -94,6 +123,160 @@ interface TokenTotal {
   cacheRead: number
   cacheWrite: number
   turns: number
+}
+
+// ─── Assistant-streaming helpers ────────────────────────────────
+
+/**
+ * Handle an incoming `message` event from the server, merging delta chunks
+ * into the most recent matching streaming assistant item.
+ *
+ *  - isDelta=true, same blockIndex as an open streamer → append
+ *  - isDelta=true, no open streamer → start a new streaming assistant item
+ *  - isDelta=false, matching open streamer → finalize (replace content, drop
+ *    streamingBlockIndex). This is the authoritative text; any concatenation
+ *    drift gets corrected here.
+ *  - isDelta=false, no matching streamer → plain new assistant bubble
+ */
+function appendAssistantContent(
+  setItems: React.Dispatch<React.SetStateAction<ChatItem[]>>,
+  evt: Extract<ServerEvent, { type: "message" }>,
+) {
+  const ts = Date.now()
+  setItems((prev) => {
+    const next = [...prev]
+    const idx = findStreamingIndex(next, evt.blockIndex, evt.parentToolUseId)
+    if (evt.isDelta) {
+      if (idx >= 0) {
+        const existing = next[idx] as Extract<ChatItem, { kind: "assistant" }>
+        next[idx] = { ...existing, content: existing.content + evt.content }
+      } else {
+        next.push({
+          kind: "assistant",
+          content: evt.content,
+          ts,
+          parentToolUseId: evt.parentToolUseId,
+          streamingBlockIndex: evt.blockIndex ?? 0,
+        })
+      }
+    } else {
+      if (idx >= 0) {
+        const existing = next[idx] as Extract<ChatItem, { kind: "assistant" }>
+        next[idx] = {
+          ...existing,
+          content: evt.content,
+          streamingBlockIndex: undefined,
+        }
+      } else {
+        next.push({
+          kind: "assistant",
+          content: evt.content,
+          ts,
+          parentToolUseId: evt.parentToolUseId,
+        })
+      }
+    }
+    return next
+  })
+}
+
+function finalizeStreamingBlock(
+  setItems: React.Dispatch<React.SetStateAction<ChatItem[]>>,
+  blockIndex: number | undefined,
+) {
+  setItems((prev) => {
+    const idx = findStreamingIndex(prev, blockIndex)
+    if (idx < 0) return prev
+    const next = [...prev]
+    const existing = next[idx] as Extract<ChatItem, { kind: "assistant" }>
+    next[idx] = { ...existing, streamingBlockIndex: undefined }
+    return next
+  })
+}
+
+/**
+ * Walk a normalized event stream (e.g. returned by /api/agent/history) and
+ * build up the ChatItem[] they would produce if replayed live.
+ * Skips lifecycle events (session_created, complete, block_stop, etc.) that
+ * aren't meaningful when just rehydrating past turns.
+ */
+function eventsToItems(events: ServerEvent[]): ChatItem[] {
+  const items: ChatItem[] = []
+  for (const evt of events) {
+    switch (evt.type) {
+      case "message":
+        if (evt.role === "user") {
+          items.push({ kind: "user", content: evt.content, ts: Date.now() })
+        } else {
+          items.push({
+            kind: "assistant",
+            content: evt.content,
+            ts: Date.now(),
+            parentToolUseId: evt.parentToolUseId,
+          })
+        }
+        break
+      case "thinking":
+        items.push({
+          kind: "thinking",
+          content: evt.content,
+          ts: Date.now(),
+        })
+        break
+      case "tool_call":
+        items.push({
+          kind: "tool",
+          id: evt.id,
+          name: evt.name,
+          input: evt.input,
+          ts: Date.now(),
+          parentToolUseId: evt.parentToolUseId,
+        })
+        break
+      case "tool_result": {
+        for (let i = items.length - 1; i >= 0; i--) {
+          const it = items[i]
+          if (it.kind === "tool" && it.id === evt.id) {
+            items[i] = { ...it, result: { output: evt.output, isError: evt.isError } }
+            break
+          }
+        }
+        break
+      }
+      case "permission_denied":
+        items.push({ kind: "permission_denied", denials: evt.denials, ts: Date.now() })
+        break
+      case "error":
+        items.push({ kind: "error", code: evt.code, message: evt.message, ts: Date.now() })
+        break
+      // Everything else (session_created, complete, session_ended,
+      // token_usage, block_stop, system, permission_request) is lifecycle
+      // noise for replay and gets dropped.
+      default:
+        break
+    }
+  }
+  return items
+}
+
+function findStreamingIndex(
+  items: ChatItem[],
+  blockIndex: number | undefined,
+  parentToolUseId?: string,
+): number {
+  for (let i = items.length - 1; i >= 0; i--) {
+    const it = items[i]
+    if (it.kind !== "assistant") continue
+    if (it.streamingBlockIndex === undefined) return -1 // last assistant was finalized; start fresh
+    if (
+      (blockIndex === undefined || it.streamingBlockIndex === blockIndex) &&
+      (parentToolUseId ?? undefined) === (it.parentToolUseId ?? undefined)
+    ) {
+      return i
+    }
+    return -1
+  }
+  return -1
 }
 
 // ─── The component ──────────────────────────────────────────────
@@ -167,14 +350,24 @@ export function AgentChat({ taskId, initialPrompt, onSessionIdChange }: AgentCha
           setSessionId(evt.sessionId)
           sessionIdRef.current = evt.sessionId
           onSessionIdChange?.(evt.sessionId)
+          // Persist so a refresh or back-nav can call /agent/history to
+          // rehydrate the prior conversation.
+          if (typeof window !== "undefined") {
+            window.localStorage.setItem(
+              `instant-coding:session:${taskId}`,
+              evt.sessionId,
+            )
+          }
           break
         case "message":
-          appendItem({
-            kind: "assistant",
-            content: evt.content,
-            ts: Date.now(),
-            parentToolUseId: evt.parentToolUseId,
-          })
+          if (evt.role === "user") {
+            appendItem({ kind: "user", content: evt.content, ts: Date.now() })
+          } else {
+            appendAssistantContent(setItems, evt)
+          }
+          break
+        case "block_stop":
+          finalizeStreamingBlock(setItems, evt.blockIndex)
           break
         case "thinking":
           appendItem({ kind: "thinking", content: evt.content, ts: Date.now() })
@@ -191,6 +384,15 @@ export function AgentChat({ taskId, initialPrompt, onSessionIdChange }: AgentCha
           break
         case "tool_result":
           attachToolResult(evt.id, evt.output, evt.isError)
+          break
+        case "permission_request":
+          appendItem({
+            kind: "permission_request",
+            requestId: evt.requestId,
+            toolName: evt.toolName,
+            input: evt.input,
+            ts: Date.now(),
+          })
           break
         case "permission_denied":
           appendItem({ kind: "permission_denied", denials: evt.denials, ts: Date.now() })
@@ -237,50 +439,89 @@ export function AgentChat({ taskId, initialPrompt, onSessionIdChange }: AgentCha
     [appendItem, attachToolResult],
   )
 
-  // Connect WS on mount
+  // Connect WS on mount, after hydrating past history if any
   useEffect(() => {
-    const scheme = window.location.protocol === "https:" ? "wss" : "ws"
-    const url = `${scheme}://${window.location.host}/api/agent/ws?taskId=${encodeURIComponent(taskId)}`
-    const ws = new WebSocket(url)
-    wsRef.current = ws
-
+    const sessionKey = `instant-coding:session:${taskId}`
     const autoSentKey = `instant-coding:auto-sent:${taskId}`
-    ws.onopen = () => {
-      setState("ready")
-      if (initialPrompt && typeof window !== "undefined") {
-        const already = window.localStorage.getItem(autoSentKey)
-        if (!already) {
+    let priorSessionId: string | null = null
+    if (typeof window !== "undefined") {
+      priorSessionId = window.localStorage.getItem(sessionKey)
+    }
+
+    let cancelled = false
+    ;(async () => {
+      // Try to hydrate from the on-disk session file first. On success, the
+      // prior conversation appears instantly before the WS opens.
+      if (priorSessionId) {
+        try {
+          const res = await fetch(
+            `/api/agent/history/${encodeURIComponent(taskId)}?sessionId=${encodeURIComponent(priorSessionId)}`,
+          )
+          if (res.ok) {
+            const data = (await res.json()) as { events: ServerEvent[] }
+            const hydrated = eventsToItems(data.events)
+            if (!cancelled && hydrated.length > 0) {
+              setItems(hydrated)
+              setSessionId(priorSessionId)
+              sessionIdRef.current = priorSessionId
+              onSessionIdChange?.(priorSessionId)
+            }
+          }
+        } catch {
+          /* fall through to a fresh session */
+        }
+      }
+      if (cancelled) return
+
+      const scheme = window.location.protocol === "https:" ? "wss" : "ws"
+      const url = `${scheme}://${window.location.host}/api/agent/ws?taskId=${encodeURIComponent(taskId)}`
+      const ws = new WebSocket(url)
+      wsRef.current = ws
+
+      ws.onopen = () => {
+        setState("ready")
+        // Auto-send the initial prompt only the very first time (no stored
+        // session, no auto-sent flag). Resumed sessions wait for the user.
+        if (
+          initialPrompt &&
+          !priorSessionId &&
+          typeof window !== "undefined" &&
+          !window.localStorage.getItem(autoSentKey)
+        ) {
           window.localStorage.setItem(autoSentKey, "1")
           ws.send(JSON.stringify({ type: "prompt", content: initialPrompt }))
           setState("streaming")
         }
       }
-    }
-    ws.onmessage = (ev) => {
-      try {
-        const parsed = JSON.parse(typeof ev.data === "string" ? ev.data : ev.data.toString())
-        handleEvent(parsed as ServerEvent)
-      } catch (err) {
-        // eslint-disable-next-line no-console
-        console.error("[agent-chat] parse error", err, ev.data)
+      ws.onmessage = (ev) => {
+        try {
+          const parsed = JSON.parse(
+            typeof ev.data === "string" ? ev.data : ev.data.toString(),
+          )
+          handleEvent(parsed as ServerEvent)
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.error("[agent-chat] parse error", err, ev.data)
+        }
       }
-    }
-    ws.onerror = () => setState("error")
-    ws.onclose = (ev) => {
-      setState((s) => (s === "error" ? s : "closed"))
-      if (ev.code === 1011 || ev.code >= 4000) {
-        appendItem({
-          kind: "error",
-          code: `ws_close_${ev.code}`,
-          message: ev.reason || "connection closed abnormally",
-          ts: Date.now(),
-        })
+      ws.onerror = () => setState("error")
+      ws.onclose = (event) => {
+        setState((s) => (s === "error" ? s : "closed"))
+        if (event.code === 1011 || event.code >= 4000) {
+          appendItem({
+            kind: "error",
+            code: `ws_close_${event.code}`,
+            message: event.reason || "connection closed abnormally",
+            ts: Date.now(),
+          })
+        }
       }
-    }
+    })()
 
     return () => {
+      cancelled = true
       try {
-        ws.close()
+        wsRef.current?.close()
       } catch {}
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -311,6 +552,20 @@ export function AgentChat({ taskId, initialPrompt, onSessionIdChange }: AgentCha
     }
   }
 
+  const sendPermissionDecision = useCallback((requestId: string, allow: boolean) => {
+    const ws = wsRef.current
+    if (ws?.readyState !== WebSocket.OPEN) return
+    ws.send(JSON.stringify({ type: "permission_decision", requestId, allow }))
+    // Mark the item so the UI locks the buttons
+    setItems((prev) =>
+      prev.map((it) =>
+        it.kind === "permission_request" && it.requestId === requestId
+          ? { ...it, decision: allow ? "allow" : "deny" }
+          : it,
+      ),
+    )
+  }, [])
+
   return (
     <div className="flex flex-col h-full bg-card">
       {/* Status bar */}
@@ -323,9 +578,23 @@ export function AgentChat({ taskId, initialPrompt, onSessionIdChange }: AgentCha
             环境已就绪。说你想写点什么，Claude 立刻动手。
           </div>
         )}
-        {items.map((item, i) => (
-          <ItemRow key={i} item={item} />
-        ))}
+        {items.map((item, i) => {
+          // Visual nesting for subagent output: if this item belongs to a
+          // parent tool_use (Task subagent), indent it so it reads as a
+          // branch of that tool card above it.
+          const nested =
+            "parentToolUseId" in item && typeof item.parentToolUseId === "string"
+          return (
+            <div
+              key={i}
+              className={cn(
+                nested && "pl-6 border-l-2 border-violet-400/25 ml-4",
+              )}
+            >
+              <ItemRow item={item} onPermissionDecision={sendPermissionDecision} />
+            </div>
+          )
+        })}
         {state === "streaming" && <TypingIndicator />}
       </div>
 
@@ -433,7 +702,13 @@ function Avatar({ role }: { role: "user" | "assistant" }) {
   )
 }
 
-function ItemRow({ item }: { item: ChatItem }) {
+function ItemRow({
+  item,
+  onPermissionDecision,
+}: {
+  item: ChatItem
+  onPermissionDecision?: (requestId: string, allow: boolean) => void
+}) {
   if (item.kind === "user") {
     // Asymmetric corner (rounded-br-md) per claudecodeui — gives the bubble a
     // visual "pointer" toward the avatar without needing an actual arrow.
@@ -474,6 +749,9 @@ function ItemRow({ item }: { item: ChatItem }) {
   if (item.kind === "tool") {
     return <ToolItem item={item} />
   }
+  if (item.kind === "permission_request") {
+    return <PermissionRequestRow item={item} onDecision={onPermissionDecision} />
+  }
   if (item.kind === "permission_denied") {
     return (
       <div className="flex gap-3">
@@ -497,15 +775,78 @@ function ItemRow({ item }: { item: ChatItem }) {
       </div>
     )
   }
-  // error
+  if (item.kind === "error") {
+    return (
+      <div className="flex gap-3">
+        <div className="w-8 h-8 rounded-lg bg-red-500/20 text-red-600 flex items-center justify-center flex-shrink-0">
+          <XCircle className="w-4 h-4" />
+        </div>
+        <div className="flex-1 bg-red-500/5 border-l-2 border-red-500/60 rounded-r-xl px-3 py-2 text-xs">
+          <div className="font-mono text-red-600 dark:text-red-400 mb-0.5">{item.code}</div>
+          <div className="text-muted-foreground">{item.message}</div>
+        </div>
+      </div>
+    )
+  }
+  return null
+}
+
+function PermissionRequestRow({
+  item,
+  onDecision,
+}: {
+  item: Extract<ChatItem, { kind: "permission_request" }>
+  onDecision?: (requestId: string, allow: boolean) => void
+}) {
+  const accent = toolAccent(item.toolName)
+  const decided = item.decision !== undefined
   return (
     <div className="flex gap-3">
-      <div className="w-8 h-8 rounded-lg bg-red-500/20 text-red-600 flex items-center justify-center flex-shrink-0">
-        <XCircle className="w-4 h-4" />
+      <div className="w-8 h-8 rounded-lg bg-primary/15 text-primary flex items-center justify-center flex-shrink-0">
+        <Wrench className="w-4 h-4" />
       </div>
-      <div className="flex-1 bg-red-500/5 border-l-2 border-red-500/60 rounded-r-xl px-3 py-2 text-xs">
-        <div className="font-mono text-red-600 dark:text-red-400 mb-0.5">{item.code}</div>
-        <div className="text-muted-foreground">{item.message}</div>
+      <div
+        className={cn(
+          "flex-1 border border-border bg-card rounded-xl overflow-hidden",
+          "border-l-2",
+          accent.border,
+        )}
+      >
+        <div className="px-3 py-2 text-xs space-y-2">
+          <div className="flex items-center gap-2">
+            <span className={cn("font-mono font-medium", accent.text)}>{item.toolName}</span>
+            <span className="text-muted-foreground">请求运行</span>
+          </div>
+          <pre className="text-xs font-mono whitespace-pre-wrap break-all leading-relaxed text-muted-foreground bg-muted/40 rounded p-2 max-h-[180px] overflow-y-auto">
+            {JSON.stringify(item.input, null, 2)}
+          </pre>
+          {!decided ? (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => onDecision?.(item.requestId, true)}
+                className="flex items-center gap-1 px-3 py-1 rounded-md bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90 active:scale-[0.97] transition-all"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" /> 允许
+              </button>
+              <button
+                onClick={() => onDecision?.(item.requestId, false)}
+                className="flex items-center gap-1 px-3 py-1 rounded-md bg-muted text-foreground text-xs font-medium hover:bg-accent active:scale-[0.97] transition-all"
+              >
+                <XCircle className="w-3.5 h-3.5" /> 拒绝
+              </button>
+              <span className="text-[10px] text-muted-foreground ml-auto">55s 内不回应自动拒绝</span>
+            </div>
+          ) : (
+            <div
+              className={cn(
+                "text-xs",
+                item.decision === "allow" ? "text-green-600" : "text-muted-foreground",
+              )}
+            >
+              {item.decision === "allow" ? "已允许" : "已拒绝"}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )

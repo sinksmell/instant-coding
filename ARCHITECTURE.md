@@ -36,7 +36,7 @@ Instant Coding 是 B-S 三段式架构：浏览器 ⟷ Next.js BFF ⟷ Codespace
    - WS 反向代理（`/api/agent/ws`）：鉴权 → 查 DB → boot Codespace → 签 JWT → 反向代理到 Codespace 私有端口
    - Supabase 元数据管理（任务 / 会话外键 / token 用量）
 3. **Codespace agent-runtime**（薄桥接，独立 repo `@instant-coding/agent-runtime`）：核心只做协议转换。
-   - `/agent` WS：`spawn('claude', [...])` 进程桥，stdin ⟷ WS 输入，stream-json stdout ⟷ WS 事件
+   - `/agent` WS：通过 `@anthropic-ai/claude-agent-sdk` 的 `query()` 异步迭代器驱动 Claude。每个 turn 是一次 query 调用（options.resume=<sessionId>），多轮之间共享 session id。SDK 的 `canUseTool` hook 把工具权限请求转成 `permission_request` WS 事件，客户端 `permission_decision` 回传
    - `/shell` WS：`node-pty` spawn 用户 `$SHELL`，随连接生命周期，client ⟷ pty stdio；支持 `{type:"resize"}` SIGWINCH
    - `/git/*` REST：`status`/`diff`/`file`/`worktree`/`commit`/`push`（M7，见 §5.5）
    - `/fs` REST：`tree` / `read` / `write`（见 §5.7）
@@ -58,19 +58,21 @@ Instant Coding 是 B-S 三段式架构：浏览器 ⟷ Next.js BFF ⟷ Codespace
 
 代价：Codespace 冷启动（~30s～2min），需要 agent-runtime 的 bootstrap 机制（见第七节）。
 
-### 2.2 为什么直接用 `claude` CLI、不用 `@anthropic-ai/claude-agent-sdk`
+### 2.2 ~~为什么直接用 `claude` CLI~~ → 为什么切到 SDK（2026-04-28 反转）
 
 调研 claudecodeui 的实现（`server/claude-sdk.js:160` 写死 `sdkOptions.pathToClaudeCodeExecutable = process.env.CLAUDE_CLI_PATH || 'claude'`），确认 **SDK 底层就是 spawn 同一个 `claude` 二进制**，它只在上面包了 stream-json 的程序化 API。
 
-| 维度 | 用 SDK | 直接用 CLI |
+| 维度 | 直接 CLI | SDK（现） |
 |---|---|---|
-| 依赖 | 绑 SDK 版本，SDK 升级可能破坏兼容 | 只依赖 Codespace 里 `claude` 可执行 |
-| 版本/配置一致性 | SDK 自带一套，可能与用户的 `claude` 不同 | 跟用户手动跑的 `claude` 100% 一致 |
-| 人机 session 共享 | 做不到 | **shell tab 与 chat tab 共读同一个 `~/.claude/projects/*.jsonl`** |
-| MCP / hook / subagent | 要看 SDK 是否暴露 | Claude Code 新能力**自动**可用 |
-| abort / permission | SDK 有现成 API（省事） | 解析 stream-json 自己实现（约几百行） |
+| 流式文本 | headless `claude -p` 并不稳定发 `content_block_delta` | **一等公民**：generator 自然 yield delta，client typewriter 现成 |
+| 交互式权限 | 不可能（headless 无 `permission_request`） | `canUseTool` hook 把每次工具调用转成 WS 往返 |
+| Session 共享 | 单进程 stdin 续发 | 每 turn 一次 query + `options.resume`，底层仍写 jsonl ✓ |
+| MCP / subagent | 自动跟进（CLI 直接读配置） | 自动跟进（SDK 透传 `settingSources`/`tools` preset） |
+| 依赖 | 只绑 `claude` 二进制 | 多一层 npm dep（`@anthropic-ai/claude-agent-sdk ^0.2.121`） |
+| abort | SIGINT / SIGTERM | `queryInstance.interrupt()` |
+| Prompt caching | **单进程常驻 → turn 间 cache 命中** | **每 turn 重建 cache**（已知回归） |
 
-结论：agent-runtime 的 `/agent` 路径直接 `spawn('claude', ...)` + 自己解析 stream-json。SDK 节省的代码量，远不及"人机 session 共享"和"版本解耦"带来的架构收益。
+结论：SDK 代价（prompt caching 不复用 + npm 依赖）可接受，收益（流式 / 权限 / 回放）远大。人机 session 共享不变量保留。
 
 ### 2.3 为什么还需要 agent-runtime（不直接让 BFF SSH 进去跑）
 
@@ -168,32 +170,37 @@ agent-runtime/
 
 **JWT 校验中间件**：所有 WS/REST 路径校验 `Authorization: Bearer <jwt>`，要求 `aud === "instant-coding-runtime"` 且 `exp > now`。
 
-### 4.3 Claude CLI 调用约定
+### 4.3 SDK 调用约定（`src/claude-sdk.js`）
 
-**命令行模板**（`src/claude-proc.ts`）：
-```bash
-claude \
-  -p "<user prompt>" \
-  --output-format stream-json \
-  --input-format stream-json \
-  --verbose \
-  [--resume <session-id>]
+```js
+import { query } from "@anthropic-ai/claude-agent-sdk"
+
+const queryInstance = query({
+  prompt: "<user prompt>",
+  options: {
+    env: { ...process.env, ANTHROPIC_API_KEY, ANTHROPIC_BASE_URL },
+    pathToClaudeCodeExecutable: process.env.CLAUDE_CLI_PATH || "claude",
+    cwd,
+    systemPrompt: { type: "preset", preset: "claude_code" },
+    settingSources: ["project", "user", "local"],
+    tools: { type: "preset", preset: "claude_code" },
+    resume: sessionId,                 // omitted on first turn
+    permissionMode,                    // optional
+    allowedTools, disallowedTools,
+    model,                             // optional
+    canUseTool: (name, input) => ...,  // permission round-trip
+  },
+})
+for await (const msg of queryInstance) { /* normalize → WS */ }
 ```
 
-**stdin / stdout**：
-- stdin：agent-runtime 把 WS 收到的后续消息按 stream-json 格式写入（一行一个 JSON）
-- stdout：按行 parse JSON，归一化后通过 WS 推给 BFF
+**Turn 边界**：每次 `prompt` 启动一次 `query()`，自然迭代到 `result` 消息后结束。后续 prompt 以 `resume: <captured sessionId>` 再发一次 —— 对外看起来是多轮对话，内部是一串独立的 SDK 调用。
 
-**进程生命周期**：
-- 每个 WS 连接对应一个 `claude` 子进程（首次 prompt 时 spawn）
-- 后续 prompt 复用同一进程（通过 stdin 追加）
-- `abort` 消息 → 发 `SIGINT` 给子进程；子进程退出后下一次 prompt 重新 spawn + `--resume`
-- WS 断开 → `SIGTERM` 子进程，清理资源
+**并发**：一个 WS 一次只能跑一个 turn。如果客户端在 turn 没结束时发第二条 prompt，runtime **队列** 一条（再来就 reject `turn_in_progress`）。
 
-**环境变量注入**（子进程 env）：
-- `ANTHROPIC_API_KEY`（从 WS 握手头取）
-- `ANTHROPIC_BASE_URL`（可选，从 WS 握手头取）
-- 继承父进程所有 env（含 `PATH`，保证 `claude` 可执行）
+**Abort**：`queryInstance.interrupt()` 请求 SDK 停止当前 turn。
+
+**Session 共享不变量**：SDK 最终 spawn 的是 `claude` CLI，依然会写 `~/.claude/projects/<cwd-hash>/<sessionId>.jsonl`。M8 shell tab 里 `claude --resume <id>` 依然能看到同一份历史（见 §5.8 replay）。
 
 ## 五、WS 协议规格
 
@@ -218,18 +225,21 @@ BFF 是**透明代理**，浏览器 ⟷ BFF 与 BFF ⟷ runtime 走同一套 sch
 
 | type | 字段 | 说明 |
 |---|---|---|
-| `prompt` | `content: string`, `sessionId?: string`, `images?: string[]`, `permissionMode?: "default"\|"acceptEdits"\|"bypassPermissions"\|"plan"\|"dontAsk"\|"auto"`, `allowedTools?: string[]`, `disallowedTools?: string[]` | 提交用户输入。首次无 `sessionId`，后续带 runtime 返回的 `sessionId`。`images` 是 base64 data URL。**`permissionMode` / `allowedTools` / `disallowedTools` 只在首条 prompt（spawn 时）生效**，后续 prompt 忽略；要变更需重开 WS 连接。|
-| `abort` | — | 中断当前 `claude` 进程（SIGINT，5s 后 SIGTERM 兜底） |
+| `prompt` | `content: string`, `sessionId?: string`, `images?: string[]`, `permissionMode?`, `allowedTools?: string[]`, `disallowedTools?: string[]`, `model?` | 提交用户输入。首次无 `sessionId`，后续 BFF 从 localStorage 带回之前 runtime 返回的 `sessionId` 以 resume。`permissionMode` / `allowedTools` 在 SDK 上下文中每 turn 生效（无需重开 WS） |
+| `abort` | — | 调 `queryInstance.interrupt()` 请求 SDK 中断当前 turn |
+| `permission_decision` | `requestId: string`, `allow: boolean`, `updatedInput?: object`, `reason?: string` | 响应 SDK `canUseTool` 的 hook；55s 不回应 runtime 自动 `deny` |
 
-> **headless 模式不支持交互式权限往返**。claude `-p` 不发 `permission_request`；被策略拒的工具直接以 `tool_result` + `is_error:true` 返回，并在 `result.permission_denials[]` 汇总。工具白/黑名单在会话启动时用 `permissionMode` / `allowedTools` / `disallowedTools` 预设。
+> **交互式权限往返** via SDK `canUseTool`。每次 Claude 请求调用一个默认被 gated 的工具 → runtime emit `permission_request` → 客户端显示允许/拒绝 UI → 客户端发 `permission_decision` → runtime 解析 hook 的 promise → SDK 继续执行。`result.permission_denials[]` 仍作为 turn 完成后的汇总保留。
 
 #### 5.3.2 server → client
 
 | type | 字段 | 说明 |
 |---|---|---|
-| `session_created` | `sessionId: string` | Claude 分配的 session ID，每个 WS 连接只发 1 次（runtime 去重 claude 的每-turn `system/init`） |
-| `message` | `role: "assistant"`, `content: string`, `isDelta: boolean`, `parentToolUseId?: string` | 助手文本；`parentToolUseId` 表示隶属于某个 subagent（Task 工具）的调用树 |
+| `session_created` | `sessionId: string` | Claude 分配的 session ID，每 WS 连接只发 1 次（runtime 捕获 SDK 首条消息的 session_id 并去重）。客户端 localStorage 存 `instant-coding:session:<taskId>` 以便刷新后 `/agent/history` 回放 |
+| `message` | `role: "assistant"\|"user"`, `content: string`, `isDelta: boolean`, `blockIndex?: number`, `parentToolUseId?: string` | 助手或用户文本；`isDelta:true` = `content_block_delta` 的增量片段（client typewriter 累加）；`isDelta:false` = 完整块（canonical，可替换任何已累加内容）。history replay 也会发 `role:"user"` 的 message 以重建 user 气泡 |
+| `block_stop` | `blockIndex?: number` | 对应块的 streaming 结束信号，client 用来锁定当前 streaming 气泡 |
 | `thinking` | `content: string`, `signature?: string`, `parentToolUseId?: string` | extended thinking 内容块 |
+| `permission_request` | `requestId: string`, `toolName: string`, `input: object` | SDK `canUseTool` hook 触发 —— 等客户端发 `permission_decision`（55s 超时） |
 | `tool_call` | `id: string`, `name: string`, `input: object`, `parentToolUseId?: string` | Claude 调用工具 |
 | `tool_result` | `id: string`, `output: string`, `isError: boolean`, `parentToolUseId?: string` | 工具执行结果（runtime 转发 claude stdout 对应段） |
 | `permission_denied` | `denials: Array<{toolName, toolUseId, input}>` | 当前 turn 内被 permission-mode 阻塞的工具汇总（从 `result.permission_denials` 归一化） |
@@ -283,6 +293,18 @@ BFF 是**透明代理**，浏览器 ⟷ BFF 与 BFF ⟷ runtime 走同一套 sch
 PR 创建不经 runtime，由 BFF 自己用 octokit 开：`POST /api/agent/pr/<taskId>` body `{ title, body?, head, base? }` → 调 `createPullRequest()` → 回写 `task.pr_url` → 返回 `{ url, number, state }`。
 
 路径校验：所有 `path` 入参拒绝绝对路径、拒绝 `..`；`/git/worktree` 额外用 `path.resolve` 防逃逸。`ref` 白名单 `[\w./-]+`。
+
+### 5.8 Session history replay（`/agent/history`，SDK era）
+
+`GET /agent/history?sessionId=<sid>` —— runtime 读 `~/.claude/projects/<cwd-with-slashes-as-dashes>/<sid>.jsonl`，把每行 parse 成 SDK 消息并通过 `normalize()` 归一成与 live 相同的 WS 事件流。
+
+**cwd 编码**：Claude Code 把 `/Users/sinksmell/foo` 存为 `-Users-sinksmell-foo`（`/` → `-`，保留前导 dash）。
+
+**内部提示过滤**：jsonl 里包含 CLI bookkeeping 条目（`<command-name>` / `<system-reminder>` / `Caveat:` / `[Request interrupted` 等前缀），`normalize()` 的 `isInternalUserText()` 把它们丢弃，不进 replay。
+
+**客户端回放**：`components/agent-chat.tsx` 挂载时读 `localStorage.getItem("instant-coding:session:<taskId>")`；有值则先 `fetch('/api/agent/history/<taskId>?sessionId=<sid>')`，用 `eventsToItems()` 把事件流转成 ChatItem[] 一次性 setItems，再开 WS（此次不重发 `initialPrompt`）。刷新后用户看到的仍是完整对话历史。
+
+**BFF 代理**：`app/api/agent/history/[taskId]/route.ts`（单端点，`?sessionId=` 通过 qs 透传），复用 `resolveEndpointForTask` + `proxyToRuntime`。
 
 ### 5.7 Filesystem REST（/fs，M9 起）
 
@@ -386,7 +408,8 @@ spawn('claude', ..., { env: { ANTHROPIC_API_KEY: key, ... } })
 - **2026-04-27 架构翻转**：从"Next.js 内一次性生成 PR"改为"Codespace 内跑原生 Claude Code + BFF 代理 WS"。参照 claudecodeui 的 `server/`，但把 server 部分下放到每个用户的 Codespace。
 - **2026-04-27 工具执行位置**：Agent 的所有工具在 Codespace 本机执行，不走 SSH 隧道也不在 BFF 做。
 - **2026-04-27 Session 持久化**：直接用 Claude Code 的 `~/.claude/projects/*.jsonl`，DB 只存外键（codespace + session_id），不自己造消息表。
-- **2026-04-27 不用 `@anthropic-ai/claude-agent-sdk`**：SDK 底层也是 spawn `claude`（`server/claude-sdk.js:160`），直接用 CLI 版本解耦 + MCP/hook/subagent 自动跟进 + shell tab 与 chat tab 共享 `~/.claude` session。代价是自己解析 stream-json 和实现 abort/permission 往返，约几百行。
+- **2026-04-27 不用 `@anthropic-ai/claude-agent-sdk`**：SDK 底层也是 spawn `claude`（`server/claude-sdk.js:160`），直接用 CLI 版本解耦 + MCP/hook/subagent 自动跟进 + shell tab 与 chat tab 共享 `~/.claude` session。代价是自己解析 stream-json 和实现 abort/permission 往返，约几百行。**（2026-04-28 反转，见下条）**
+- **2026-04-28 反转：改用 SDK**：headless `claude -p` 不提供 `permission_request` 事件，也不稳定 emit `content_block_delta`。对照 claudecodeui 发现 `@anthropic-ai/claude-agent-sdk` 把这两个能力做成一等公民（`canUseTool` hook + delta generator）。切到 SDK 后：①交互式权限往返、②流式 typewriter、③从 `.jsonl` 回放历史、④subagent 视觉嵌套 都能落地。SDK 最终仍 spawn 同一个 `claude` 二进制，因此 `~/.claude/projects/*.jsonl` 继续被写入、shell tab 仍能 `claude --resume <id>` 接管同一 session（关键不变量）。已知代价：SDK per-turn spawn 子进程意味着 prompt caching turn 间不复用，大 session 成本略升；如果这成为瓶颈，后续可评估 SDK 的 streaming input 模式。
 - **2026-04-27 agent-runtime 常驻 vs BFF 直连 SSH**：选常驻。SSH 握手延迟、PTY 断连即 kill、文件/git 各套一层，均不可接受。
 - **2026-04-27 agent-runtime 形态**：独立 GitHub repo，发布为 npm 包 `@instant-coding/agent-runtime`。devcontainer 里 `npm i -g` 安装。
 - **2026-04-27 BFF ↔ Codespace 鉴权**：短期 JWT，HS256，TTL 5 分钟。密钥按 Codespace 绑定（通过 Codespace user secret 注入），不同 Codespace 密钥独立。

@@ -27,6 +27,7 @@
     "smoke:fs": "node scripts/smoke-fs.js"
   },
   "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.2.121",
     "express": "^4.19.2",
     "jsonwebtoken": "^9.0.2",
     "node-pty": "^1.1.0",
