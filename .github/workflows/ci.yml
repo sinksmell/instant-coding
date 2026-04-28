@@ -1,0 +1,85 @@
+# Default CI: offline checks only. Runs on every push / PR to master.
+# See .github/workflows/claude-smoke.yml for the billed end-to-end run.
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── Next.js BFF: typecheck, lint, build ─────────────────────────────
+  web:
+    name: Web (typecheck · lint · build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install deps
+        run: npm ci --no-audit --no-fund
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        # All secrets below are placeholders — `next build` only needs them to
+        # be present so module-level env reads don't throw. NEXTAUTH_MOCK=true
+        # short-circuits the real Supabase / GitHub-OAuth wiring in auth.ts.
+        env:
+          NEXTAUTH_MOCK: "true"
+          NEXTAUTH_SECRET: ci-placeholder-secret
+          NEXTAUTH_URL: http://localhost:3000
+          API_KEY_ENCRYPTION_KEY: ci-placeholder-encryption-key
+          AGENT_RUNTIME_JWT_SECRET: ci-placeholder-jwt-secret
+          SUPABASE_URL: http://127.0.0.1:54321
+          SUPABASE_ANON_KEY: ci-placeholder
+          SUPABASE_SERVICE_ROLE_KEY: ci-placeholder
+          NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder
+          NEXT_PUBLIC_MOCK_LOGIN: "true"
+        run: npm run build
+
+  # ── agent-runtime: the offline integration smokes ──────────────────
+  agent-runtime:
+    name: Agent runtime (smoke · git · shell · fs)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/agent-runtime
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/agent-runtime/package-lock.json
+
+      - name: Install deps
+        run: npm ci --no-audit --no-fund
+
+      - name: Rebuild node-pty (native)
+        # node-pty's prebuild fetch is flaky; rebuilding locally against the
+        # Ubuntu toolchain is both cheap and reliable.
+        run: npm rebuild node-pty
+
+      - name: Smoke · git REST
+        run: npm run smoke:git
+
+      - name: Smoke · fs REST
+        run: npm run smoke:fs
+
+      - name: Smoke · shell PTY
+        run: npm run smoke:shell

@@ -1,0 +1,53 @@
+# Billed end-to-end smoke: spawns a real `claude -p` process and makes one
+# paid API call (~$0.10–0.30 per run). Manual-dispatch only; requires the
+# ANTHROPIC_API_KEY repository secret to be configured.
+name: Claude Smoke (billed)
+
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: "Why this run (visible in logs)"
+        required: false
+        default: "manual verification"
+
+jobs:
+  smoke:
+    name: /agent WS end-to-end
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/agent-runtime
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/agent-runtime/package-lock.json
+
+      - name: Reason
+        run: echo "Run reason → ${{ inputs.reason }}"
+
+      - name: Install runtime deps
+        run: npm ci --no-audit --no-fund
+
+      - name: Install claude CLI
+        run: npm i -g @anthropic-ai/claude-code
+
+      - name: Rebuild node-pty (native)
+        run: npm rebuild node-pty
+
+      - name: Sanity — claude --version
+        run: claude --version
+
+      - name: Smoke · /agent WS (real Claude call)
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "::error::ANTHROPIC_API_KEY secret is not set on this repo"
+            exit 1
+          fi
+          npm run smoke

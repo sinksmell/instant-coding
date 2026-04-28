@@ -52,7 +52,10 @@ export const {
       if (isMockMode) return true
       if (!user.email || !profile) return false
 
-      const githubProfile = profile as {
+      // The shared Profile type in next-auth is narrower than GitHub's actual
+      // payload. We know this runs after the GitHub provider, so widen via
+      // `unknown` per the TS suggestion rather than loosening the shared type.
+      const githubProfile = profile as unknown as {
         id: number
         login: string
         avatar_url: string
@@ -77,7 +80,7 @@ export const {
     },
     async jwt({ token, account, profile }) {
       if (account && profile) {
-        token.githubId = String((profile as { id: number }).id)
+        token.githubId = String((profile as unknown as { id: number }).id)
         token.accessToken = account.access_token
       }
       return token

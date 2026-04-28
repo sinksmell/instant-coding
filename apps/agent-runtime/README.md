@@ -31,6 +31,13 @@ Dev with auto-reload:
 npm run dev
 ```
 
+## CI
+
+GitHub Actions runs the three offline smokes on every push and PR
+(`.github/workflows/ci.yml`). The billed `/agent` end-to-end smoke lives in a
+separate, manual-dispatch workflow (`.github/workflows/claude-smoke.yml`) and
+reads `ANTHROPIC_API_KEY` from repo secrets.
+
 ## Smoke tests
 
 ```bash
