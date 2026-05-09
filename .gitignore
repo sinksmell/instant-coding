@@ -1,7 +1,27 @@
-node_modules/
-.next/
-out/
-dist/
-.env*.local
+# env
+.env
+.env.local
+.env.*.local
+
+# logs
 *.log
-tsconfig.tsbuildinfo
+
+# os / editor
+.DS_Store
+.idea/
+.vscode/
+!.vscode/extensions.json
+
+# claude code local state
+.claude/settings.local.json
+
+# tool caches
+node_modules/
+.pnpm-store/
+__pycache__/
+*.pyc
+.venv/
+venv/
+.go-build/
+dist/
+build/
