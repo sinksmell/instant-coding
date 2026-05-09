@@ -26,18 +26,35 @@ VS Code 端预装：Claude Code、Python、Pylance、Go、ESLint、Prettier、Gi
 
 ## 配置 API Key
 
-Codespace 启动后两个 CLI 都已就位，但还没登录态。两种方式：
+Codespace 启动后两个 CLI 都已就位，但还没登录态。三种方式，按需挑一种：
 
-**A. Codespace Secrets（推荐，免交互）**
+**A. 官方账号 + Codespace Secrets（推荐，免交互）**
 
-GitHub → `Settings` → `Codespaces` → `Repository secrets`，配：
+GitHub → `Settings` → `Codespaces` → `Repository secrets`（或 `User secrets` 跨仓库共享），配：
 
 - `ANTHROPIC_API_KEY` → Claude Code 自动用
 - `OPENAI_API_KEY` → Codex CLI 自动用
 
-下次启动 Codespace 自动注入到环境变量。
+下次启动 Codespace 自动注入到环境变量。`.devcontainer/devcontainer.json` 的 `remoteEnv` 负责把它们透传进容器。
 
-**B. 命令行登录**
+**B. 第三方 Anthropic 兼容网关（比如 DeepSeek / 自建中转）**
+
+同样走 Codespace Secrets，但换一组变量。Claude Code 看到 `ANTHROPIC_BASE_URL` + `ANTHROPIC_AUTH_TOKEN` 就会走那个地址而不是 `api.anthropic.com`，模型名则映射到目标提供商。以 DeepSeek 为例：
+
+```bash
+ANTHROPIC_BASE_URL=https://api.deepseek.com/anthropic
+ANTHROPIC_AUTH_TOKEN=<你的 DeepSeek API Key>
+ANTHROPIC_MODEL=deepseek-v4-pro[1m]
+ANTHROPIC_DEFAULT_OPUS_MODEL=deepseek-v4-pro[1m]
+ANTHROPIC_DEFAULT_SONNET_MODEL=deepseek-v4-pro[1m]
+ANTHROPIC_DEFAULT_HAIKU_MODEL=deepseek-v4-flash
+CLAUDE_CODE_SUBAGENT_MODEL=deepseek-v4-flash
+CLAUDE_CODE_EFFORT_LEVEL=max
+```
+
+这 8 个变量名都已在 `devcontainer.json` 的 `remoteEnv` 里声明了，只要在 Codespace Secrets 里配好同名 key，进容器就能用。完整清单见 `.env.example`。
+
+**C. 命令行登录**
 
 ```bash
 claude login    # OAuth 走浏览器
