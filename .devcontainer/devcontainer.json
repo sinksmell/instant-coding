@@ -2,12 +2,9 @@
   "name": "Instant Coding Codespace",
   "image": "mcr.microsoft.com/devcontainers/universal:2-linux",
 
+  "remoteUser": "codespace",
+
   "features": {
-    "ghcr.io/devcontainers/features/common-utils:2": {
-      "installZsh": true,
-      "configureZshAsDefaultShell": true,
-      "username": "codespace"
-    },
     "ghcr.io/devcontainers/features/node:1": {
       "version": "22",
       "nodeGypDependencies": true
@@ -18,9 +15,7 @@
     },
     "ghcr.io/devcontainers/features/go:1": {
       "version": "1.23"
-    },
-    "ghcr.io/devcontainers/features/git:1": {},
-    "ghcr.io/devcontainers/features/github-cli:1": {}
+    }
   },
 
   "postCreateCommand": "bash .devcontainer/post-create.sh",
