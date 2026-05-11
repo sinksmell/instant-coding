@@ -1,8 +1,8 @@
 {
   "name": "Instant Coding Codespace",
-  "image": "mcr.microsoft.com/devcontainers/universal:2-linux",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-22.04",
 
-  "remoteUser": "codespace",
+  "remoteUser": "vscode",
 
   "features": {
     "ghcr.io/devcontainers/features/node:1": {
@@ -15,7 +15,8 @@
     },
     "ghcr.io/devcontainers/features/go:1": {
       "version": "1.23"
-    }
+    },
+    "ghcr.io/devcontainers/features/github-cli:1": {}
   },
 
   "postCreateCommand": "bash .devcontainer/post-create.sh",
